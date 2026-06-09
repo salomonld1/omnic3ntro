@@ -10,12 +10,8 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-900 px-4">
       <div className="w-full max-w-md">
         {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-sky-500 rounded-2xl mb-4">
-            <span className="text-white font-bold text-xl">O3</span>
-          </div>
-          <h1 className="text-2xl font-bold text-white">Omnic3ntro</h1>
-          <p className="text-slate-400 text-sm mt-1">Messaging Platform by C3ntro Telecom</p>
+        <div className="flex justify-center mb-8">
+          <img src="/logo.png" alt="Omnic3ntro" className="h-16 w-auto" />
         </div>
 
         {/* Card */}
