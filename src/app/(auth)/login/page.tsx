@@ -7,7 +7,7 @@ export default function LoginPage() {
   const [state, action, pending] = useActionState(login, undefined)
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-900 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-sky-900 px-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex justify-center mb-8">
@@ -66,7 +66,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-xs text-slate-500 mt-6">
-          © 2024 C3ntro Telecom — Todos los derechos reservados
+          © 2026 C3ntro Telecom — Todos los derechos reservados
         </p>
       </div>
     </div>

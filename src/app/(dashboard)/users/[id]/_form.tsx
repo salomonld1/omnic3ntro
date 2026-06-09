@@ -12,6 +12,7 @@ type User = {
   apiKey: string | null
   infobipApiKey: string | null
   infobipBaseUrl: string | null
+  pricePerMessage: number | null
   parent: { id: string; name: string } | null
 }
 
@@ -38,6 +39,7 @@ export function EditUserForm({
     baseUrl: user.infobipBaseUrl ?? '',
   })
   const [apiKey, setApiKey] = useState(user.apiKey)
+  const [price, setPrice] = useState(user.pricePerMessage?.toString() ?? '')
   const [saved, setSaved] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState<string | null>(null)
@@ -200,6 +202,41 @@ export function EditUserForm({
                 {loading === 'infobip' ? 'Guardando...' : 'Guardar Infobip'}
               </button>
               {saved === 'infobip' && <span className="text-sm text-emerald-600">✓ Guardado</span>}
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Precio por mensaje — solo visible para quien establece ese precio */}
+      {user.role !== 'admin' && !(viewerRole === 'reseller' && user.role === 'reseller') && (
+        <div className="bg-white rounded-xl border border-slate-200 p-6">
+          <h2 className="font-semibold text-slate-800 mb-1">Precio por mensaje</h2>
+          <p className="text-sm text-slate-500 mb-5">
+            {viewerRole === 'admin' && user.role === 'reseller'
+              ? 'Precio que C3ntro le cobra a este reseller por cada mensaje. El reseller no puede ver este precio.'
+              : viewerRole === 'reseller'
+              ? 'Precio que le cobras a este cliente por cada mensaje enviado.'
+              : 'Precio que se le cobra a este cliente por cada mensaje enviado.'}
+          </p>
+          <form onSubmit={async (e) => { e.preventDefault(); await patch({ pricePerMessage: price ? parseFloat(price) : null }, 'price') }} className="space-y-4">
+            <div className="flex items-center gap-3 max-w-xs">
+              <div className="relative flex-1">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                <input
+                  type="number" step="0.0001" min="0" value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  placeholder="0.2200"
+                  className="w-full pl-7 pr-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent"
+                />
+              </div>
+              <span className="text-sm text-slate-500">MXN / mensaje</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <button type="submit" disabled={loading === 'price'}
+                className="px-4 py-2 bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors">
+                {loading === 'price' ? 'Guardando...' : 'Guardar precio'}
+              </button>
+              {saved === 'price' && <span className="text-sm text-emerald-600">✓ Guardado</span>}
             </div>
           </form>
         </div>

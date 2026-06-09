@@ -26,7 +26,7 @@ export default async function WhatsAppPage() {
       <main className="flex-1 p-6 space-y-6">
         <div className="flex gap-3">
           <Link href="/whatsapp/send" className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors">
-            <Send className="w-4 h-4" /> Enviar mensaje
+            <Send className="w-4 h-4" /> Enviar WhatsApp
           </Link>
           <Link href="/whatsapp/bulk" className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg border border-slate-200 transition-colors">
             <Send className="w-4 h-4" /> Envío masivo

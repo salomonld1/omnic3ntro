@@ -16,9 +16,10 @@ model User {
   parentId       String?
   parent         User?      @relation("UserHierarchy", fields: [parentId], references: [id])
   children       User[]     @relation("UserHierarchy")
-  apiKey         String?    @unique
-  infobipApiKey  String?
-  infobipBaseUrl String?
+  apiKey           String?    @unique
+  infobipApiKey    String?
+  infobipBaseUrl   String?
+  pricePerMessage  Float?
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
   messages       Message[]
@@ -63,6 +64,7 @@ model Message {
   messageId   String?
   bulkId      String?
   campaignId  String?
+  cost        Float?
   sentAt      DateTime?
   deliveredAt DateTime?
   userId      String

@@ -26,7 +26,7 @@ export default async function RcsPage() {
       <main className="flex-1 p-6 space-y-6">
         <div className="flex gap-3">
           <Link href="/rcs/send" className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors">
-            <Send className="w-4 h-4" /> Enviar mensaje RCS
+            <Send className="w-4 h-4" /> Enviar RCS
           </Link>
           <Link href="/rcs/bulk" className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-lg border border-slate-200 transition-colors">
             <Send className="w-4 h-4" /> Envío masivo
