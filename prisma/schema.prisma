@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id             String     @id @default(cuid())
+  name           String
+  email          String     @unique
+  password       String
+  role           String     @default("user")   // 'admin' | 'reseller' | 'user'
+  parentId       String?
+  parent         User?      @relation("UserHierarchy", fields: [parentId], references: [id])
+  children       User[]     @relation("UserHierarchy")
+  apiKey         String?    @unique
+  infobipApiKey  String?
+  infobipBaseUrl String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  messages       Message[]
+  campaigns      Campaign[]
+  contacts       Contact[]
+  templates      Template[]
+}
+
+model Contact {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String
+  email     String?
+  country   String?
+  tags      String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Template {
+  id        String   @id @default(cuid())
+  name      String
+  channel   String
+  content   String
+  language  String   @default("es")
+  status    String   @default("active")
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Message {
+  id          String    @id @default(cuid())
+  to          String
+  from        String?
+  content     String
+  channel     String
+  status      String    @default("pending")
+  messageId   String?
+  bulkId      String?
+  campaignId  String?
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  campaign    Campaign? @relation(fields: [campaignId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Campaign {
+  id          String    @id @default(cuid())
+  name        String
+  channel     String
+  status      String    @default("draft")
+  total       Int       @default(0)
+  sent        Int       @default(0)
+  delivered   Int       @default(0)
+  failed      Int       @default(0)
+  scheduledAt DateTime?
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  messages    Message[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
