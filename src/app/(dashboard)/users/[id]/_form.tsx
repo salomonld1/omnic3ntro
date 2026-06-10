@@ -270,6 +270,7 @@ export function EditUserForm({
                 onChange={(e) => setInfobip({ ...infobip, appId: e.target.value.replace(/\D/g, '').slice(0, 5) })}
                 placeholder="Ej: 12345"
                 inputMode="numeric"
+                minLength={5}
                 maxLength={5}
                 pattern="[0-9]{5}"
                 required={user.role === 'client' || user.role === 'reseller'}

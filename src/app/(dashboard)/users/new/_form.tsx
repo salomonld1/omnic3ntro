@@ -189,6 +189,7 @@ export function NewUserForm({
             onChange={(e) => setForm({ ...form, infobipAppId: e.target.value.replace(/\D/g, '').slice(0, 5) })}
             placeholder="Ej: 12345"
             inputMode="numeric"
+            minLength={5}
             maxLength={5}
             pattern="[0-9]{5}"
             required={form.role === 'client' || form.role === 'reseller'}
