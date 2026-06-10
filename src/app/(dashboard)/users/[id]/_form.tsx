@@ -223,18 +223,29 @@ export function EditUserForm({
             </div>
           )}
 
-          {viewerRole === 'admin' && profile.role === 'user' && clients.length > 0 && (
+          {viewerRole === 'admin' && profile.role === 'user' && (clients.length > 0 || resellers.length > 0) && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                Cliente <span className="text-slate-400 font-normal">(opcional)</span>
+                Cliente / Reseller <span className="text-slate-400 font-normal">(opcional)</span>
               </label>
               <select value={profile.parentId}
                 onChange={(e) => setProfile({ ...profile, parentId: e.target.value })}
                 className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent bg-white">
-                <option value="">Sin cliente asignado</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
+                <option value="">Sin asignar</option>
+                {clients.length > 0 && (
+                  <optgroup label="Clientes">
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {resellers.length > 0 && (
+                  <optgroup label="Resellers">
+                    {resellers.map((r) => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
               {user.parent && (
                 <p className="text-xs text-slate-400 mt-1">Actualmente: {user.parent.name}</p>
