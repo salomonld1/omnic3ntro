@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { fetchLogsForAppIds, resolveReportAppIds } from '@/lib/infobip'
+import { prisma } from '@/lib/prisma'
 import * as XLSX from 'xlsx'
 
 function periodDates(period: string, from?: string, to?: string) {
@@ -40,8 +41,16 @@ export async function GET(req: NextRequest) {
 
   const dates = periodDates(period, from, to)
   const appIds = await resolveReportAppIds(session.userId, session.role)
-  const all = await fetchLogsForAppIds(appIds, dates, channel)
+  const [all, usersWithApp] = await Promise.all([
+    fetchLogsForAppIds(appIds, dates, channel),
+    prisma.user.findMany({ where: { infobipAppId: { not: null } }, select: { infobipAppId: true, name: true } }),
+  ])
   all.sort((a, b) => (a.sentAt < b.sentAt ? 1 : -1))
+
+  const appIdToName: Record<string, string> = {}
+  for (const u of usersWithApp) {
+    if (u.infobipAppId) appIdToName[u.infobipAppId] = u.name
+  }
 
   const total = all.length
   const paginated = all.slice((page - 1) * limit, page * limit)
@@ -55,7 +64,7 @@ export async function GET(req: NextRequest) {
     cost: m.pricePerMessage,
     createdAt: m.sentAt,
     sentAt: m.sentAt,
-    user: { id: m.appId ?? 'platform', name: m.appId ?? 'Plataforma' },
+    user: { id: m.appId ?? 'platform', name: appIdToName[m.appId ?? ''] ?? 'Plataforma' },
     campaign: null,
   }))
 
