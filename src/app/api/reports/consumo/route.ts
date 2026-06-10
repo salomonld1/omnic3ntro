@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { fetchSmsLogs, fetchWhatsAppLogs } from '@/lib/infobip'
+import { fetchLogsForAppIds, resolveReportAppIds } from '@/lib/infobip'
 
 function periodDates(period: string, from?: string, to?: string) {
   const now = new Date()
@@ -35,17 +35,14 @@ export async function GET(req: NextRequest) {
   const to     = searchParams.get('to') ?? undefined
 
   const dates = periodDates(period, from, to)
-
-  const [smsLogs, waLogs] = await Promise.all([
-    fetchSmsLogs({ ...dates, limit: 1000 }),
-    fetchWhatsAppLogs({ ...dates, limit: 1000 }),
-  ])
+  const appIds = await resolveReportAppIds(session.userId, session.role)
+  const allLogs = await fetchLogsForAppIds(appIds, dates)
 
   return NextResponse.json([{
     name: 'Plataforma',
-    sms: smsLogs.length,
-    whatsapp: waLogs.length,
+    sms: allLogs.filter((m) => m.channel === 'sms').length,
+    whatsapp: allLogs.filter((m) => m.channel === 'whatsapp').length,
     rcs: 0,
-    total: smsLogs.length + waLogs.length,
+    total: allLogs.length,
   }])
 }

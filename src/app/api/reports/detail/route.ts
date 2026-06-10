@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { prisma } from '@/lib/prisma'
-import { fetchSmsLogs, fetchWhatsAppLogs } from '@/lib/infobip'
-import type { UnifiedLog } from '@/lib/infobip'
+import { fetchLogsForAppIds, resolveReportAppIds } from '@/lib/infobip'
 
 function periodDates(period: string, from?: string, to?: string) {
   const now = new Date()
@@ -40,19 +38,13 @@ export async function GET(req: NextRequest) {
   const limit   = 50
 
   const dates = periodDates(period, from, to)
-
-  const [smsLogs, waLogs] = await Promise.all([
-    channel === 'whatsapp' ? [] : fetchSmsLogs({ ...dates, limit: 1000 }),
-    channel === 'sms'      ? [] : fetchWhatsAppLogs({ ...dates, limit: 1000 }),
-  ])
-
-  const all: UnifiedLog[] = [...smsLogs, ...waLogs]
+  const appIds = await resolveReportAppIds(session.userId, session.role)
+  const all = await fetchLogsForAppIds(appIds, dates, channel)
   all.sort((a, b) => (a.sentAt < b.sentAt ? 1 : -1))
 
   const total = all.length
   const paginated = all.slice((page - 1) * limit, page * limit)
 
-  // Enrich with a generic user label (platform-level — all messages from one account)
   const result = paginated.map((m) => ({
     id: m.messageId,
     to: m.to,
@@ -62,7 +54,7 @@ export async function GET(req: NextRequest) {
     cost: m.pricePerMessage,
     createdAt: m.sentAt,
     sentAt: m.sentAt,
-    user: { id: 'platform', name: 'Plataforma' },
+    user: { id: m.appId ?? 'platform', name: m.appId ?? 'Plataforma' },
     campaign: null,
   }))
 
@@ -71,13 +63,13 @@ export async function GET(req: NextRequest) {
     const headers = ['Fecha', 'Destinatario', 'Remitente', 'Canal', 'Estado', 'Costo', 'Mensaje']
     const lines = [
       headers.join(','),
-      ...result.map((m) => [
+      ...all.map((m) => [
         m.sentAt,
         m.to,
         m.from,
         m.channel,
-        m.status,
-        m.cost?.toFixed(4) ?? '',
+        m.statusGroup,
+        m.pricePerMessage?.toFixed(4) ?? '',
         `"${m.text.replace(/"/g, "'")}"`,
       ].join(',')),
     ]

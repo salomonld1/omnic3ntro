@@ -33,6 +33,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       apiKey: true,
       infobipApiKey: true,
       infobipBaseUrl: true,
+      infobipAppId: true,
       pricePerMessage: true,
       billingType: true,
       balance: true,
@@ -60,7 +61,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   if (!existing) return NextResponse.json({ error: 'Usuario no encontrado' }, { status: 404 })
 
   const body = await request.json()
-  const { name, email, password, role, infobipApiKey, infobipBaseUrl, generateApiKey, parentId, pricePerMessage } = body
+  const { name, email, password, role, infobipApiKey, infobipBaseUrl, infobipAppId, generateApiKey, parentId, pricePerMessage } = body
 
   if (email && email !== existing.email) {
     const emailTaken = await prisma.user.findUnique({ where: { email } })
@@ -77,6 +78,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   }
   if (infobipApiKey !== undefined) data.infobipApiKey = infobipApiKey || null
   if (infobipBaseUrl !== undefined) data.infobipBaseUrl = infobipBaseUrl || null
+  if (infobipAppId !== undefined) data.infobipAppId = infobipAppId || null
   if (pricePerMessage !== undefined) data.pricePerMessage = pricePerMessage !== null ? Number(pricePerMessage) : null
   if (generateApiKey) data.apiKey = `o3_${crypto.randomBytes(24).toString('hex')}`
 

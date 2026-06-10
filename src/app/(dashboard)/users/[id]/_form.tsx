@@ -12,6 +12,7 @@ type User = {
   apiKey: string | null
   infobipApiKey: string | null
   infobipBaseUrl: string | null
+  infobipAppId: string | null
   pricePerMessage: number | null
   billingType: string | null
   balance: number | null
@@ -41,6 +42,7 @@ export function EditUserForm({
   const [infobip, setInfobip] = useState({
     apiKey: user.infobipApiKey ?? '',
     baseUrl: user.infobipBaseUrl ?? '',
+    appId: user.infobipAppId ?? '',
   })
   const [apiKey, setApiKey] = useState(user.apiKey)
   const [price, setPrice] = useState(user.pricePerMessage?.toString() ?? '')
@@ -93,7 +95,7 @@ export function EditUserForm({
 
   async function saveInfobip(e: React.FormEvent) {
     e.preventDefault()
-    await patch({ infobipApiKey: infobip.apiKey, infobipBaseUrl: infobip.baseUrl }, 'infobip')
+    await patch({ infobipApiKey: infobip.apiKey, infobipBaseUrl: infobip.baseUrl, infobipAppId: infobip.appId }, 'infobip')
   }
 
   async function billingPost(body: Record<string, unknown>, section: string) {
@@ -259,6 +261,16 @@ export function EditUserForm({
                   placeholder={viewerRole === 'admin' ? 'xxxxxx.api.infobip.com' : 'URL de acceso'}
                   className="flex-1 px-3.5 py-2.5 border border-slate-300 rounded-r-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent font-mono" />
               </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Application ID <span className="text-slate-400 font-normal">(Infobip)</span>
+              </label>
+              <input type="text" value={infobip.appId}
+                onChange={(e) => setInfobip({ ...infobip, appId: e.target.value })}
+                placeholder="Ej: A1B2C3D4"
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent font-mono" />
+              <p className="text-xs text-slate-400 mt-1">ID de la Application creada en el portal de Infobip. Se usa para filtrar reportes por cliente.</p>
             </div>
             <div className="flex items-center gap-3">
               <button type="submit" disabled={loading === 'infobip'}

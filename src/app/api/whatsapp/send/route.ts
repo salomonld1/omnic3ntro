@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { sendWhatsApp } from '@/lib/infobip'
+import { sendWhatsApp, resolveAppId } from '@/lib/infobip'
 import { checkBilling, recordDebit } from '@/lib/billing'
 
 export async function POST(req: NextRequest) {
@@ -16,15 +16,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const appId = await resolveAppId(session.userId)
     const content = type === 'template'
       ? { templateName: message, language: 'es' }
       : { text: message }
-    const result = await sendWhatsApp(session.userId, {
-      from,
-      to,
-      content,
-      callbackData: session.userId,
-    })
+    const result = await sendWhatsApp(session.userId, { from, to, content, appId })
     const messageId = (result as { messages?: Array<{ messageId?: string }> })?.messages?.[0]?.messageId
     await recordDebit(session.userId, 1)
     const warning = 'warning' in billing ? billing.warning : undefined

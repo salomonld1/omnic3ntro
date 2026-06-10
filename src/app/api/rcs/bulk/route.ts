@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { resolveCredentials } from '@/lib/infobip'
+import { resolveCredentials, resolveAppId } from '@/lib/infobip'
 import { checkBilling, recordDebit } from '@/lib/billing'
 
 type ContactPayload = { to: string; message?: string; name?: string }
@@ -35,6 +35,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Credenciales Infobip no configuradas' }, { status: 503 })
     }
 
+    const appId = await resolveAppId(session.userId)
+
     await Promise.allSettled(
       recipients.map((c) =>
         fetch(`https://${baseUrl}/rcs/1/message`, {
@@ -43,7 +45,7 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify({
             from: from || undefined,
             to: c.to,
-            callbackData: session.userId,
+            ...(appId ? { callbackData: appId } : {}),
             content: { text: c.message || message },
           }),
         })

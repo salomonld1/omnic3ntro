@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { sendSms } from '@/lib/infobip'
+import { sendSms, resolveAppId } from '@/lib/infobip'
 import { checkBilling, recordDebit } from '@/lib/billing'
 
 export async function POST(req: NextRequest) {
@@ -14,12 +14,8 @@ export async function POST(req: NextRequest) {
   if (!to || !message) return NextResponse.json({ error: 'to y message son requeridos' }, { status: 400 })
 
   try {
-    const result = await sendSms(session.userId, {
-      to,
-      from,
-      text: message,
-      clientReference: session.userId,
-    })
+    const appId = await resolveAppId(session.userId)
+    const result = await sendSms(session.userId, { to, from, text: message, appId })
     const messageId = (result as { messages?: Array<{ messageId?: string }> })?.messages?.[0]?.messageId
     await recordDebit(session.userId, 1)
     const warning = 'warning' in billing ? billing.warning : undefined

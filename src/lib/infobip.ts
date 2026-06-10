@@ -25,6 +25,58 @@ export async function resolveCredentials(userId: string) {
   return getGlobalCredentials()
 }
 
+// Resuelve el applicationId de Infobip: usuario → cliente → reseller → null
+export async function resolveAppId(userId: string): Promise<string | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      infobipAppId: true,
+      parent: {
+        select: {
+          infobipAppId: true,
+          parent: { select: { infobipAppId: true } },
+        },
+      },
+    },
+  })
+  return user?.infobipAppId
+    ?? user?.parent?.infobipAppId
+    ?? user?.parent?.parent?.infobipAppId
+    ?? null
+}
+
+// Devuelve todos los applicationIds visibles para un usuario según su rol
+export async function resolveReportAppIds(userId: string, role: string): Promise<string[] | null> {
+  if (role === 'admin') return null // null = sin filtro, ve todo
+
+  if (role === 'reseller') {
+    const reseller = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        infobipAppId: true,
+        children: { select: { infobipAppId: true } },
+      },
+    })
+    const ids = [
+      reseller?.infobipAppId,
+      ...(reseller?.children.map((c) => c.infobipAppId) ?? []),
+    ].filter(Boolean) as string[]
+    return ids.length > 0 ? ids : null
+  }
+
+  if (role === 'client') {
+    const client = await prisma.user.findUnique({ where: { id: userId }, select: { infobipAppId: true } })
+    return client?.infobipAppId ? [client.infobipAppId] : null
+  }
+
+  // user — usa el appId de su cliente padre
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { parent: { select: { infobipAppId: true } } },
+  })
+  return user?.parent?.infobipAppId ? [user.parent.infobipAppId] : null
+}
+
 export function getGlobalCredentials() {
   return {
     apiKey: process.env.INFOBIP_API_KEY ?? '',
@@ -68,7 +120,7 @@ export async function sendSms(
     text: string
     notifyUrl?: string
     scheduleTime?: string
-    clientReference?: string
+    appId?: string | null
   }
 ) {
   const creds = await resolveCredentials(userId)
@@ -83,7 +135,7 @@ export async function sendSms(
       content: { text: params.text },
       notifyUrl: params.notifyUrl,
       sendAt: params.scheduleTime,
-      clientReference: params.clientReference,
+      ...(params.appId ? { platform: { applicationId: params.appId } } : {}),
     }],
   }, creds)
 }
@@ -94,7 +146,7 @@ export async function sendWhatsApp(
     from: string
     to: string
     content: { text?: string; templateName?: string; language?: string }
-    callbackData?: string
+    appId?: string | null
   }
 ) {
   const creds = await resolveCredentials(userId)
@@ -104,7 +156,7 @@ export async function sendWhatsApp(
       messages: [{
         from: params.from,
         to: params.to,
-        callbackData: params.callbackData,
+        ...(params.appId ? { callbackData: params.appId } : {}),
         content: {
           templateName: params.content.templateName,
           templateData: { body: { placeholders: [] } },
@@ -117,29 +169,29 @@ export async function sendWhatsApp(
   return infobipRequest('/whatsapp/1/message/text', 'POST', {
     from: params.from,
     to: params.to,
-    callbackData: params.callbackData,
+    ...(params.appId ? { callbackData: params.appId } : {}),
     content: { text: params.content.text },
   }, creds)
 }
 
 export async function sendRcs(
   userId: string,
-  params: { from: string; to: string; content: { text: string }; callbackData?: string }
+  params: { from: string; to: string; content: { text: string }; appId?: string | null }
 ) {
   const creds = await resolveCredentials(userId)
   return infobipRequest('/rcs/1/message', 'POST', {
     from: params.from,
     to: params.to,
-    callbackData: params.callbackData,
+    ...(params.appId ? { callbackData: params.appId } : {}),
     content: { text: params.content.text },
   }, creds)
 }
 
-// ─── Log types (field names as returned by this Infobip instance) ─────────────
+// ─── Log types ────────────────────────────────────────────────────────────────
 
 export type InfobipSmsLog = {
   messageId: string
-  destination: string   // phone number
+  destination: string
   sender: string
   bulkId?: string
   sentAt: string
@@ -149,7 +201,7 @@ export type InfobipSmsLog = {
   status: { groupId: number; groupName: string; id: number; name: string; description: string }
   error?: { groupId: number; groupName: string; id: number; name: string }
   content?: { text?: string }
-  clientReference?: string
+  platform?: { applicationId?: string }
 }
 
 export type InfobipWhatsAppLog = {
@@ -167,8 +219,6 @@ export type InfobipWhatsAppLog = {
   content?: { text?: string; templateName?: string }
 }
 
-// ─── Unified log type for reports ─────────────────────────────────────────────
-
 export type UnifiedLog = {
   messageId: string
   to: string
@@ -176,16 +226,18 @@ export type UnifiedLog = {
   text: string
   channel: 'sms' | 'whatsapp'
   sentAt: string
-  statusGroup: string   // DELIVERED | UNDELIVERABLE | PENDING | REJECTED | EXPIRED
+  statusGroup: string
   pricePerMessage: number | null
   currency: string | null
+  appId: string | null
 }
 
-// ─── Log fetchers (always use global/env credentials) ─────────────────────────
+// ─── Log fetchers ─────────────────────────────────────────────────────────────
 
 export async function fetchSmsLogs(params: {
   sentSince?: string
   sentUntil?: string
+  applicationId?: string
   limit?: number
 }): Promise<UnifiedLog[]> {
   const { apiKey, baseUrl } = getGlobalCredentials()
@@ -194,6 +246,7 @@ export async function fetchSmsLogs(params: {
   const q = new URLSearchParams()
   if (params.sentSince) q.set('sentSince', params.sentSince)
   if (params.sentUntil) q.set('sentUntil', params.sentUntil)
+  if (params.applicationId) q.set('applicationId', params.applicationId)
   q.set('limit', String(Math.min(params.limit ?? 1000, 1000)))
 
   try {
@@ -212,6 +265,7 @@ export async function fetchSmsLogs(params: {
       statusGroup: m.status?.groupName ?? 'UNKNOWN',
       pricePerMessage: m.price?.pricePerMessage ?? null,
       currency: m.price?.currency ?? null,
+      appId: m.platform?.applicationId ?? null,
     }))
   } catch {
     return []
@@ -247,8 +301,49 @@ export async function fetchWhatsAppLogs(params: {
       statusGroup: m.status?.groupName ?? 'UNKNOWN',
       pricePerMessage: m.price?.pricePerMessage ?? null,
       currency: m.price?.currency ?? null,
+      appId: m.callbackData ?? null,
     }))
   } catch {
     return []
   }
+}
+
+// Fetch logs filtrando por múltiples applicationIds en paralelo
+export async function fetchLogsForAppIds(
+  appIds: string[] | null,
+  dates: { sentSince?: string; sentUntil?: string },
+  channel?: string
+): Promise<UnifiedLog[]> {
+  if (appIds === null) {
+    // Admin: sin filtro
+    const [sms, wa] = await Promise.all([
+      channel === 'whatsapp' ? [] : fetchSmsLogs({ ...dates, limit: 1000 }),
+      channel === 'sms'      ? [] : fetchWhatsAppLogs({ ...dates, limit: 1000 }),
+    ])
+    return [...sms, ...wa]
+  }
+
+  if (appIds.length === 0) return []
+
+  const results = await Promise.all(
+    appIds.flatMap((id) => [
+      channel === 'whatsapp' ? Promise.resolve([]) : fetchSmsLogs({ ...dates, applicationId: id, limit: 1000 }),
+      channel === 'sms'      ? Promise.resolve([]) : fetchWhatsAppLogs({ ...dates, limit: 1000 }),
+    ])
+  )
+
+  // WhatsApp no soporta filtro por appId en el API — filtramos por callbackData client-side
+  const waLogs = results.filter((_, i) => i % 2 === 1).flat()
+  const waFiltered = waLogs.filter((m) => appIds.includes(m.appId ?? ''))
+  const smsLogs = results.filter((_, i) => i % 2 === 0).flat()
+
+  // Deduplicar mensajes SMS (pueden aparecer en múltiples appId queries si hay solapamiento)
+  const seen = new Set<string>()
+  const smsDeduped = smsLogs.filter((m) => {
+    if (seen.has(m.messageId)) return false
+    seen.add(m.messageId)
+    return true
+  })
+
+  return [...smsDeduped, ...waFiltered]
 }

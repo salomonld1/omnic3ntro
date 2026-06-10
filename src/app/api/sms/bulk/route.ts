@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { resolveCredentials } from '@/lib/infobip'
+import { resolveCredentials, resolveAppId } from '@/lib/infobip'
 import { checkBilling, recordDebit } from '@/lib/billing'
 
 type ContactPayload = { to: string; message?: string; name?: string }
@@ -35,6 +35,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Credenciales Infobip no configuradas' }, { status: 503 })
     }
 
+    const appId = await resolveAppId(session.userId)
+    const platform = appId ? { applicationId: appId } : undefined
+
     const hasPersonalized = recipients.some((c) => c.message && c.message !== message)
     let bulkId: string | undefined
 
@@ -49,7 +52,7 @@ export async function POST(req: NextRequest) {
                 sender: from || 'Omnic3ntro',
                 destinations: [{ to: c.to }],
                 content: { text: c.message || message },
-                clientReference: session.userId,
+                ...(platform ? { platform } : {}),
               }],
             }),
           })
@@ -64,7 +67,7 @@ export async function POST(req: NextRequest) {
             sender: from || 'Omnic3ntro',
             destinations: recipients.map((c) => ({ to: c.to })),
             content: { text: message },
-            clientReference: session.userId,
+            ...(platform ? { platform } : {}),
           }],
         }),
       })

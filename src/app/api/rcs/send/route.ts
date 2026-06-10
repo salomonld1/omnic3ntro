@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { sendRcs } from '@/lib/infobip'
+import { sendRcs, resolveAppId } from '@/lib/infobip'
 import { checkBilling, recordDebit } from '@/lib/billing'
 
 export async function POST(req: NextRequest) {
@@ -16,12 +16,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await sendRcs(session.userId, {
-      from,
-      to,
-      content: { text: message },
-      callbackData: session.userId,
-    })
+    const appId = await resolveAppId(session.userId)
+    const result = await sendRcs(session.userId, { from, to, content: { text: message }, appId })
     const messageId = (result as { messageId?: string })?.messageId
     await recordDebit(session.userId, 1)
     const warning = 'warning' in billing ? billing.warning : undefined

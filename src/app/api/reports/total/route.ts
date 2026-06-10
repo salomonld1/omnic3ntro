@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { fetchSmsLogs, fetchWhatsAppLogs } from '@/lib/infobip'
+import { fetchLogsForAppIds, resolveReportAppIds } from '@/lib/infobip'
 
 function periodDates(period: string, from?: string, to?: string) {
   const now = new Date()
@@ -36,17 +36,12 @@ export async function GET(req: NextRequest) {
   const channel = searchParams.get('channel') ?? undefined
 
   const dates = periodDates(period, from, to)
+  const appIds = await resolveReportAppIds(session.userId, session.role)
+  const allLogs = await fetchLogsForAppIds(appIds, dates, channel)
 
-  const [smsLogs, waLogs] = await Promise.all([
-    channel === 'whatsapp' ? [] : fetchSmsLogs({ ...dates, limit: 1000 }),
-    channel === 'sms'      ? [] : fetchWhatsAppLogs({ ...dates, limit: 1000 }),
-  ])
-
-  const totalSms = smsLogs.length
-  const totalWa  = waLogs.length
-  const total    = totalSms + totalWa
-
-  const allLogs = [...smsLogs, ...waLogs]
+  const totalSms = allLogs.filter((m) => m.channel === 'sms').length
+  const totalWa  = allLogs.filter((m) => m.channel === 'whatsapp').length
+  const total    = allLogs.length
   const delivered = allLogs.filter((m) => m.statusGroup === 'DELIVERED').length
   const failed    = allLogs.filter((m) => ['UNDELIVERABLE', 'REJECTED', 'EXPIRED'].includes(m.statusGroup)).length
   const cost      = allLogs.reduce((sum, m) => sum + (m.pricePerMessage ?? 0), 0)

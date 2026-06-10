@@ -19,6 +19,7 @@ model User {
   apiKey           String?    @unique
   infobipApiKey    String?
   infobipBaseUrl   String?
+  infobipAppId     String?
   pricePerMessage  Float?
   billingType      String?   // 'prepaid' | 'postpaid'
   balance          Float?    // prepago: saldo restante; postpago: deuda acumulada
