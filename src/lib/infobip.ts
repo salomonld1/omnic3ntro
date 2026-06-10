@@ -16,7 +16,6 @@ export async function resolveCredentials(userId: string) {
     },
   })
 
-  // user → parent (client) → grandparent (reseller) → env
   if (user?.infobipApiKey && user?.infobipBaseUrl)
     return { apiKey: user.infobipApiKey, baseUrl: user.infobipBaseUrl }
   if (user?.parent?.infobipApiKey && user?.parent?.infobipBaseUrl)
@@ -136,42 +135,50 @@ export async function sendRcs(
   }, creds)
 }
 
-// ─── Log types ────────────────────────────────────────────────────────────────
-
-export type InfobipLogStatus = {
-  groupId: number
-  groupName: string   // DELIVERED | UNDELIVERABLE | PENDING | REJECTED | EXPIRED
-  id: number
-  name: string
-  description: string
-}
+// ─── Log types (field names as returned by this Infobip instance) ─────────────
 
 export type InfobipSmsLog = {
   messageId: string
-  to: string
-  from: string
-  text: string
+  destination: string   // phone number
+  sender: string
+  bulkId?: string
   sentAt: string
   doneAt?: string
-  smsCount: number
+  messageCount: number
   price?: { pricePerMessage: number; currency: string }
-  status: InfobipLogStatus
-  error: { groupId: number; groupName: string; id: number; name: string }
+  status: { groupId: number; groupName: string; id: number; name: string; description: string }
+  error?: { groupId: number; groupName: string; id: number; name: string }
+  content?: { text?: string }
   clientReference?: string
-  bulkId?: string
 }
 
 export type InfobipWhatsAppLog = {
   messageId: string
-  to: string
-  from: string
+  destination?: string
+  to?: string
+  from?: string
+  sender?: string
   sentAt: string
   doneAt?: string
   price?: { pricePerMessage: number; currency: string }
-  status: InfobipLogStatus
+  status: { groupId: number; groupName: string; id: number; name: string; description: string }
   error?: { groupId: number; groupName: string; id: number; name: string }
   callbackData?: string
   content?: { text?: string; templateName?: string }
+}
+
+// ─── Unified log type for reports ─────────────────────────────────────────────
+
+export type UnifiedLog = {
+  messageId: string
+  to: string
+  from: string
+  text: string
+  channel: 'sms' | 'whatsapp'
+  sentAt: string
+  statusGroup: string   // DELIVERED | UNDELIVERABLE | PENDING | REJECTED | EXPIRED
+  pricePerMessage: number | null
+  currency: string | null
 }
 
 // ─── Log fetchers (always use global/env credentials) ─────────────────────────
@@ -179,31 +186,43 @@ export type InfobipWhatsAppLog = {
 export async function fetchSmsLogs(params: {
   sentSince?: string
   sentUntil?: string
-  clientReference?: string
   limit?: number
-}): Promise<InfobipSmsLog[]> {
+}): Promise<UnifiedLog[]> {
   const { apiKey, baseUrl } = getGlobalCredentials()
   if (!apiKey || !baseUrl) return []
 
   const q = new URLSearchParams()
   if (params.sentSince) q.set('sentSince', params.sentSince)
   if (params.sentUntil) q.set('sentUntil', params.sentUntil)
-  if (params.clientReference) q.set('clientReference', params.clientReference)
   q.set('limit', String(Math.min(params.limit ?? 1000, 1000)))
 
-  const res = await fetch(`https://${baseUrl}/sms/3/logs?${q}`, {
-    headers: { Authorization: `App ${apiKey}`, Accept: 'application/json' },
-  })
-  if (!res.ok) return []
-  const data = await res.json()
-  return data.results ?? []
+  try {
+    const res = await fetch(`https://${baseUrl}/sms/3/logs?${q}`, {
+      headers: { Authorization: `App ${apiKey}`, Accept: 'application/json' },
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.results ?? []).map((m: InfobipSmsLog): UnifiedLog => ({
+      messageId: m.messageId,
+      to: m.destination ?? '',
+      from: m.sender ?? '',
+      text: m.content?.text ?? '',
+      channel: 'sms',
+      sentAt: m.sentAt,
+      statusGroup: m.status?.groupName ?? 'UNKNOWN',
+      pricePerMessage: m.price?.pricePerMessage ?? null,
+      currency: m.price?.currency ?? null,
+    }))
+  } catch {
+    return []
+  }
 }
 
 export async function fetchWhatsAppLogs(params: {
   sentSince?: string
   sentUntil?: string
   limit?: number
-}): Promise<InfobipWhatsAppLog[]> {
+}): Promise<UnifiedLog[]> {
   const { apiKey, baseUrl } = getGlobalCredentials()
   if (!apiKey || !baseUrl) return []
 
@@ -212,10 +231,24 @@ export async function fetchWhatsAppLogs(params: {
   if (params.sentUntil) q.set('sentUntil', params.sentUntil)
   q.set('limit', String(Math.min(params.limit ?? 1000, 1000)))
 
-  const res = await fetch(`https://${baseUrl}/whatsapp/1/logs?${q}`, {
-    headers: { Authorization: `App ${apiKey}`, Accept: 'application/json' },
-  })
-  if (!res.ok) return []
-  const data = await res.json()
-  return data.results ?? []
+  try {
+    const res = await fetch(`https://${baseUrl}/whatsapp/1/logs?${q}`, {
+      headers: { Authorization: `App ${apiKey}`, Accept: 'application/json' },
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.results ?? []).map((m: InfobipWhatsAppLog): UnifiedLog => ({
+      messageId: m.messageId,
+      to: m.destination ?? m.to ?? '',
+      from: m.sender ?? m.from ?? '',
+      text: m.content?.text ?? m.content?.templateName ?? '',
+      channel: 'whatsapp',
+      sentAt: m.sentAt,
+      statusGroup: m.status?.groupName ?? 'UNKNOWN',
+      pricePerMessage: m.price?.pricePerMessage ?? null,
+      currency: m.price?.currency ?? null,
+    }))
+  } catch {
+    return []
+  }
 }
