@@ -1,29 +1,17 @@
 import { redirect } from 'next/navigation'
 import { Header } from '@/components/layout/header'
-import { UserList } from './_list'
+import { UserList } from '../_list'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
-export default async function UsersPage() {
+export default async function AdminUsersPage() {
   const session = await getSession()
-  if (!session || !['admin', 'reseller', 'client'].includes(session.role)) {
+  if (!session || session.role !== 'admin') {
     redirect('/dashboard')
   }
 
-  let where: object = {}
-  if (session.role === 'admin') {
-    // Admin ve resellers, clientes y sus usuarios directos (no admins, no usuarios de resellers)
-    where = {
-      role: { not: 'admin' },
-      NOT: { role: 'user', parent: { parentId: { not: null } } },
-    }
-  } else {
-    // Reseller ve sus clientes; cliente ve sus usuarios
-    where = { parentId: session.userId }
-  }
-
   const users = await prisma.user.findMany({
-    where,
+    where: { role: 'admin' },
     select: {
       id: true,
       name: true,
@@ -43,23 +31,9 @@ export default async function UsersPage() {
     orderBy: { createdAt: 'desc' },
   })
 
-  // Admin: resellers list para el filtro dropdown
-  const resellers = session.role === 'admin'
-    ? await prisma.user.findMany({
-        where: { role: 'reseller' },
-        select: { id: true, name: true },
-        orderBy: { name: 'asc' },
-      })
-    : []
-
-  const pageTitle =
-    session.role === 'reseller' ? 'Mis Clientes' :
-    session.role === 'client'   ? 'Mis Usuarios'  :
-    'Clientes'
-
   return (
     <div className="flex flex-col flex-1 overflow-auto">
-      <Header title={pageTitle} />
+      <Header title="Administradores" />
       <main className="flex-1 p-6">
         <UserList
           initialUsers={users.map((u) => ({
@@ -67,7 +41,7 @@ export default async function UsersPage() {
             createdAt: u.createdAt.toISOString(),
             balanceExpiresAt: u.balanceExpiresAt?.toISOString() ?? null,
           }))}
-          resellers={resellers}
+          resellers={[]}
           viewerRole={session.role}
         />
       </main>

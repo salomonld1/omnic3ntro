@@ -2,20 +2,27 @@
 
 import { useState } from 'react'
 
-type Reseller = { id: string; name: string }
+type Parent = { id: string; name: string }
 
 export function NewUserForm({
   viewerRole,
   resellers,
+  clients,
 }: {
   viewerRole: string
-  resellers: Reseller[]
+  resellers: Parent[]
+  clients: Parent[]
 }) {
+  const defaultRole =
+    viewerRole === 'reseller' ? 'client' :
+    viewerRole === 'client'   ? 'user'   :
+    'user'
+
   const [form, setForm] = useState({
     name: '',
     email: '',
     password: '',
-    role: 'user',
+    role: defaultRole,
     parentId: '',
   })
   const [error, setError] = useState('')
@@ -50,11 +57,10 @@ export function NewUserForm({
       }
 
       if (!res.ok) {
-        setError(data.error ?? `Error al crear usuario (${res.status})`)
+        setError(data.error ?? `Error al crear (${res.status})`)
         return
       }
 
-      // Hard redirect — garantiza que la lista se recargue con el nuevo usuario
       window.location.href = '/users'
     } catch (err) {
       setError(`Error de conexión: ${String(err)}`)
@@ -65,7 +71,6 @@ export function NewUserForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Error arriba para que siempre sea visible */}
       {error && (
         <div className="bg-rose-50 text-rose-700 text-sm px-4 py-3 rounded-lg border border-rose-200 font-medium">
           ⚠ {error}
@@ -108,6 +113,7 @@ export function NewUserForm({
         />
       </div>
 
+      {/* Admin: selector de rol y asignación de padre */}
       {viewerRole === 'admin' && (
         <>
           <div>
@@ -117,16 +123,18 @@ export function NewUserForm({
               onChange={(e) => setForm({ ...form, role: e.target.value, parentId: '' })}
               className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent bg-white"
             >
-              <option value="user">Usuario — accede al portal y envía mensajes</option>
-              <option value="reseller">Reseller — gestiona sus propios clientes</option>
+              <option value="user">Usuario — empleado que envía mensajes</option>
+              <option value="client">Cliente — empresa con sus propios usuarios</option>
+              <option value="reseller">Reseller — distribuidor con sus propios clientes</option>
               <option value="admin">Admin — acceso total al sistema</option>
             </select>
           </div>
 
-          {form.role === 'user' && resellers.length > 0 && (
+          {/* Cliente → puede asignarse a un reseller */}
+          {form.role === 'client' && resellers.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                Asignar a reseller <span className="text-slate-400 font-normal">(opcional)</span>
+                Reseller <span className="text-slate-400 font-normal">(opcional)</span>
               </label>
               <select
                 value={form.parentId}
@@ -140,6 +148,30 @@ export function NewUserForm({
               </select>
             </div>
           )}
+
+          {/* Usuario → debe pertenecer a un cliente */}
+          {form.role === 'user' && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Cliente</label>
+              {clients.length === 0 ? (
+                <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 px-3.5 py-2.5 rounded-lg">
+                  No hay clientes creados. Crea un cliente primero antes de agregar usuarios.
+                </p>
+              ) : (
+                <select
+                  required
+                  value={form.parentId}
+                  onChange={(e) => setForm({ ...form, parentId: e.target.value })}
+                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent bg-white"
+                >
+                  <option value="">— Selecciona un cliente —</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
         </>
       )}
 
@@ -149,7 +181,11 @@ export function NewUserForm({
           disabled={loading}
           className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors"
         >
-          {loading ? 'Creando...' : viewerRole === 'reseller' ? 'Crear cliente' : 'Crear usuario'}
+          {loading
+            ? 'Creando...'
+            : viewerRole === 'reseller' ? 'Crear cliente'
+            : viewerRole === 'client'   ? 'Crear usuario'
+            : 'Crear'}
         </button>
         <a href="/users" className="text-sm text-slate-500 hover:text-slate-700">Cancelar</a>
       </div>

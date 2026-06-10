@@ -20,12 +20,29 @@ model User {
   infobipApiKey    String?
   infobipBaseUrl   String?
   pricePerMessage  Float?
+  billingType      String?   // 'prepaid' | 'postpaid'
+  balance          Float?    // prepago: saldo restante; postpago: deuda acumulada
+  balanceExpiresAt DateTime? // prepago: fecha de vencimiento del saldo
+  creditLimit      Float?    // postpago: crédito máximo autorizado
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
   messages       Message[]
   campaigns      Campaign[]
   contacts       Contact[]
   templates      Template[]
+  balanceTransactions BalanceTransaction[]
+}
+
+model BalanceTransaction {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount      Float     // positivo = recarga/crédito, negativo = débito por uso
+  type        String    // 'topup' | 'debit' | 'limit_set' | 'debt_reset'
+  expiresAt   DateTime?
+  note        String?
+  createdById String?
+  createdAt   DateTime  @default(now())
 }
 
 model Contact {

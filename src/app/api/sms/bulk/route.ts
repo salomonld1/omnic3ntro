@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { resolveCredentials } from '@/lib/infobip'
+import { checkBilling, recordDebit } from '@/lib/billing'
 
 type ContactPayload = { to: string; message?: string; name?: string }
 
 export async function POST(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+
+  const billing = await checkBilling(session.userId)
+  if (!billing.canSend) return NextResponse.json({ error: billing.error }, { status: 402 })
 
   const body = await req.json()
   const { name, from, message } = body
@@ -100,7 +104,9 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    return NextResponse.json({ success: true, campaignId: campaign.id, total: recipients.length })
+    await recordDebit(session.userId, recipients.length)
+    const warning = 'warning' in billing ? billing.warning : undefined
+    return NextResponse.json({ success: true, campaignId: campaign.id, total: recipients.length, warning })
   } catch (err) {
     await prisma.campaign.update({ where: { id: campaign.id }, data: { status: 'failed' } })
     return NextResponse.json({ error: String(err) }, { status: 500 })

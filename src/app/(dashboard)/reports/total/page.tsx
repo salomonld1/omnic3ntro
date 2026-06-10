@@ -18,7 +18,7 @@ export default async function ReportTotalPage() {
 
   return (
     <div className="flex flex-col flex-1 overflow-auto">
-      <Header title="Reporte Total" />
+      <Header title="Reporte Resumen" />
       <main className="flex-1 p-6">
         <ReportTotalClient viewerRole={session?.role ?? 'user'} resellers={resellers} clients={clients} />
       </main>

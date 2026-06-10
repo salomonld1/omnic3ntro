@@ -6,16 +6,23 @@ export async function resolveCredentials(userId: string) {
     select: {
       infobipApiKey: true,
       infobipBaseUrl: true,
-      parent: { select: { infobipApiKey: true, infobipBaseUrl: true } },
+      parent: {
+        select: {
+          infobipApiKey: true,
+          infobipBaseUrl: true,
+          parent: { select: { infobipApiKey: true, infobipBaseUrl: true } },
+        },
+      },
     },
   })
 
-  if (user?.infobipApiKey && user?.infobipBaseUrl) {
+  // user → parent (client) → grandparent (reseller) → env
+  if (user?.infobipApiKey && user?.infobipBaseUrl)
     return { apiKey: user.infobipApiKey, baseUrl: user.infobipBaseUrl }
-  }
-  if (user?.parent?.infobipApiKey && user?.parent?.infobipBaseUrl) {
+  if (user?.parent?.infobipApiKey && user?.parent?.infobipBaseUrl)
     return { apiKey: user.parent.infobipApiKey, baseUrl: user.parent.infobipBaseUrl }
-  }
+  if (user?.parent?.parent?.infobipApiKey && user?.parent?.parent?.infobipBaseUrl)
+    return { apiKey: user.parent.parent.infobipApiKey, baseUrl: user.parent.parent.infobipBaseUrl }
   return {
     apiKey: process.env.INFOBIP_API_KEY || '',
     baseUrl: process.env.INFOBIP_BASE_URL || '',
@@ -105,7 +112,7 @@ export async function sendRcs(
   return infobipRequest('/rcs/1/message', 'POST', {
     from: params.from,
     to: params.to,
-    content: { card: { title: 'Message', description: params.content.text } },
+    content: { text: params.content.text },
   }, creds)
 }
 

@@ -45,10 +45,23 @@ export async function GET(req: NextRequest) {
     const users = await prisma.user.findMany({ where, select: { id: true } })
     userIds = users.map((u) => u.id)
   } else if (session.role === 'reseller') {
-    const where: Record<string, unknown> = { parentId: session.userId }
-    if (userId) where.id = userId
-    const users = await prisma.user.findMany({ where, select: { id: true } })
-    userIds = users.map((u) => u.id)
+    const clients = await prisma.user.findMany({
+      where: { parentId: session.userId },
+      select: { id: true },
+    })
+    const clientIds = clients.map((c) => c.id)
+    const childUsers = await prisma.user.findMany({
+      where: { parentId: { in: clientIds } },
+      select: { id: true },
+    })
+    const allIds = [...clientIds, ...childUsers.map((u) => u.id)]
+    userIds = userId ? allIds.filter((id) => id === userId) : allIds
+  } else if (session.role === 'client') {
+    const childUsers = await prisma.user.findMany({
+      where: { parentId: session.userId },
+      select: { id: true },
+    })
+    userIds = userId ? [userId] : [session.userId, ...childUsers.map((u) => u.id)]
   } else {
     userIds = [session.userId]
   }
@@ -85,10 +98,10 @@ export async function GET(req: NextRequest) {
   ])
 
   // Determine effective price per message respecting the two-layer pricing model
+  const sessionRole = session!.role
   function effectivePrice(m: typeof messages[0]) {
     if (m.cost != null) return m.cost
-    // Admin sees reseller's price for reseller-owned clients; reseller sees their client's price
-    const isAdminViewingResellerClient = session.role === 'admin' && m.user.parent != null
+    const isAdminViewingResellerClient = sessionRole === 'admin' && m.user.parent != null
     const price = isAdminViewingResellerClient
       ? m.user.parent!.pricePerMessage
       : m.user.pricePerMessage

@@ -6,7 +6,7 @@ import { getSession } from '@/lib/auth'
 
 async function canManage(session: { userId: string; role: string }, targetId: string) {
   if (session.role === 'admin') return true
-  if (session.role === 'reseller') {
+  if (session.role === 'reseller' || session.role === 'client') {
     const target = await prisma.user.findUnique({ where: { id: targetId }, select: { parentId: true } })
     return target?.parentId === session.userId
   }
@@ -34,6 +34,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       infobipApiKey: true,
       infobipBaseUrl: true,
       pricePerMessage: true,
+      billingType: true,
+      balance: true,
+      balanceExpiresAt: true,
+      creditLimit: true,
       createdAt: true,
       parent: { select: { id: true, name: true } },
     },
@@ -68,7 +72,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   if (email) data.email = email
   if (password) data.password = await bcrypt.hash(password, 10)
   if (session.role === 'admin') {
-    if (role !== undefined) data.role = ['admin', 'reseller', 'user'].includes(role) ? role : 'user'
+    if (role !== undefined) data.role = ['admin', 'reseller', 'client', 'user'].includes(role) ? role : 'user'
     if (parentId !== undefined) data.parentId = parentId || null
   }
   if (infobipApiKey !== undefined) data.infobipApiKey = infobipApiKey || null

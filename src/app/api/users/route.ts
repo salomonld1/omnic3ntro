@@ -12,7 +12,7 @@ const USER_SELECT = {
   apiKey: true,
   infobipBaseUrl: true,
   createdAt: true,
-  parent: { select: { id: true, name: true } },
+  parent: { select: { id: true, name: true, parentId: true } },
   _count: { select: { messages: true, campaigns: true, children: true } },
 }
 
@@ -22,13 +22,17 @@ export async function GET() {
 
   if (session.role === 'admin') {
     const users = await prisma.user.findMany({
+      where: {
+        role: { not: 'admin' },
+        NOT: { role: 'user', parent: { parentId: { not: null } } },
+      },
       select: USER_SELECT,
       orderBy: { createdAt: 'desc' },
     })
     return NextResponse.json(users)
   }
 
-  if (session.role === 'reseller') {
+  if (session.role === 'reseller' || session.role === 'client') {
     const users = await prisma.user.findMany({
       where: { parentId: session.userId },
       select: USER_SELECT,
@@ -44,7 +48,7 @@ export async function POST(request: Request) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
-  if (session.role !== 'admin' && session.role !== 'reseller') {
+  if (!['admin', 'reseller', 'client'].includes(session.role)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
   }
 
@@ -55,11 +59,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Nombre, email y contraseña son requeridos' }, { status: 400 })
   }
 
-  // Resellers can only create 'user' role clients under themselves
-  if (session.role === 'reseller') {
-    if (role && role !== 'user') {
-      return NextResponse.json({ error: 'Solo puedes crear clientes de tipo usuario' }, { status: 403 })
-    }
+  // Resellers create clients; clients create users
+  if (session.role === 'reseller' && role && role !== 'client') {
+    return NextResponse.json({ error: 'Solo puedes crear clientes' }, { status: 403 })
+  }
+  if (session.role === 'client' && role && role !== 'user') {
+    return NextResponse.json({ error: 'Solo puedes crear usuarios' }, { status: 403 })
   }
 
   const existing = await prisma.user.findUnique({ where: { email } })
@@ -67,15 +72,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Ya existe un usuario con ese email' }, { status: 409 })
   }
 
-  // Determine parentId: resellers always own their users; admin can assign
+  // Un usuario (role='user') siempre debe tener un cliente padre
+  const resolvedRole = session.role === 'reseller' ? 'client' : session.role === 'client' ? 'user' : (role ?? 'user')
+  if (resolvedRole === 'user' && session.role === 'admin' && !parentId) {
+    return NextResponse.json({ error: 'Un usuario debe estar asignado a un cliente' }, { status: 400 })
+  }
+
   let assignedParentId: string | null = null
   if (session.role === 'reseller') {
+    assignedParentId = session.userId
+  } else if (session.role === 'client') {
     assignedParentId = session.userId
   } else if (session.role === 'admin' && parentId) {
     assignedParentId = parentId
   }
 
-  const newRole = session.role === 'reseller' ? 'user' : (role ?? 'user')
+  const newRole = resolvedRole
 
   const user = await prisma.user.create({
     data: {

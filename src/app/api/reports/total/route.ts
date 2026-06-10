@@ -44,10 +44,25 @@ export async function GET(req: NextRequest) {
     const users = await prisma.user.findMany({ where, select: { id: true } })
     userIds = users.map((u) => u.id)
   } else if (session.role === 'reseller') {
-    const where: Record<string, unknown> = { parentId: session.userId }
-    if (userId) where.id = userId
-    const users = await prisma.user.findMany({ where, select: { id: true } })
-    userIds = users.map((u) => u.id)
+    // Ver todos los clientes del reseller y sus usuarios hijos
+    const clients = await prisma.user.findMany({
+      where: { parentId: session.userId },
+      select: { id: true },
+    })
+    const clientIds = clients.map((c) => c.id)
+    const childUsers = await prisma.user.findMany({
+      where: { parentId: { in: clientIds } },
+      select: { id: true },
+    })
+    const allIds = [...clientIds, ...childUsers.map((u) => u.id)]
+    userIds = userId ? allIds.filter((id) => id === userId) : allIds
+  } else if (session.role === 'client') {
+    // Ver sus propios mensajes y los de sus usuarios
+    const childUsers = await prisma.user.findMany({
+      where: { parentId: session.userId },
+      select: { id: true },
+    })
+    userIds = userId ? [userId] : [session.userId, ...childUsers.map((u) => u.id)]
   } else {
     userIds = [session.userId]
   }
@@ -123,7 +138,7 @@ export async function GET(req: NextRequest) {
     return new NextResponse(lines.join('\n'), {
       headers: {
         'Content-Type': 'text/csv',
-        'Content-Disposition': 'attachment; filename="reporte-total.csv"',
+        'Content-Disposition': 'attachment; filename="reporte-resumen.csv"',
       },
     })
   }
