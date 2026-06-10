@@ -53,7 +53,8 @@ export async function POST(request: Request) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
-  const isAdmin = ADMIN_ROLES.includes(session.role)
+  const isAdmin    = ADMIN_ROLES.includes(session.role)
+  const isReseller = session.role === 'reseller'
   if (!isAdmin && !['reseller', 'account', 'client'].includes(session.role)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
   }
@@ -65,8 +66,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Nombre, email y contraseña son requeridos' }, { status: 400 })
   }
 
-  if ((session.role === 'reseller') && role && !['account', 'client'].includes(role)) {
-    return NextResponse.json({ error: 'Solo puedes crear cuentas' }, { status: 403 })
+  if (session.role === 'reseller' && role && !['account', 'client', 'user'].includes(role)) {
+    return NextResponse.json({ error: 'Solo puedes crear clientes o usuarios' }, { status: 403 })
   }
   if ((session.role === 'account' || session.role === 'client') && role && role !== 'user') {
     return NextResponse.json({ error: 'Solo puedes crear usuarios' }, { status: 403 })
@@ -78,8 +79,8 @@ export async function POST(request: Request) {
   }
 
   const resolvedRole =
-    session.role === 'reseller'                      ? 'account' :
-    session.role === 'account' || session.role === 'client' ? 'user'    :
+    session.role === 'reseller'                             ? (role === 'user' ? 'user' : 'account') :
+    session.role === 'account' || session.role === 'client' ? 'user' :
     (role ?? 'user')
 
   if (resolvedRole === 'user' && isAdmin && !parentId) {
@@ -100,16 +101,18 @@ export async function POST(request: Request) {
     parentId: assignedParentId,
   }
 
-  // billing type and pricing only for accounts (direct or under reseller)
-  if (isAdmin && (resolvedRole === 'account' || resolvedRole === 'reseller')) {
+  // billing type when creating an account (admin or reseller) or reseller (admin only)
+  if ((isAdmin || isReseller) && resolvedRole === 'account') {
     if (billingType) data.billingType = billingType
     if (billingType === 'prepaid' || billingType === 'postpaid') data.balance = 0
   }
+  if (isAdmin && resolvedRole === 'reseller') {
+    if (billingType) data.billingType = billingType
+    if (billingType === 'prepaid' || billingType === 'postpaid') data.balance = 0
+    if (balanceManager) data.balanceManager = balanceManager
+  }
   if (isAdmin && resolvedRole === 'account' && pricing) {
     data.pricing = pricing
-  }
-  if (isAdmin && resolvedRole === 'reseller' && balanceManager) {
-    data.balanceManager = balanceManager
   }
 
   const user = await prisma.user.create({

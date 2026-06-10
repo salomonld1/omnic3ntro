@@ -40,10 +40,12 @@ export function NewUserForm({
   const [error, setError]   = useState('')
   const [loading, setLoading] = useState(false)
 
-  const isAdmin = viewerRole === 'admin' || viewerRole === 'superadmin'
+  const isAdmin    = viewerRole === 'admin' || viewerRole === 'superadmin'
   const isReseller = viewerRole === 'reseller'
-  const showBilling = isAdmin && (form.role === 'account' || form.role === 'reseller')
-  const showPricing = isAdmin && form.role === 'account' && !form.parentId
+  const isAccount  = viewerRole === 'account' || viewerRole === 'client'
+  const showBilling        = (isAdmin || isReseller) && form.role === 'account'
+                          || isAdmin && form.role === 'reseller'
+  const showPricing        = isAdmin && form.role === 'account' && !form.parentId
   const showBalanceManager = isAdmin && form.role === 'reseller'
 
   function p(v: string) { return v === '' ? undefined : parseFloat(v) }
@@ -130,7 +132,7 @@ export function NewUserForm({
       <Field label="Correo electrónico" name="email" type="email" placeholder="usuario@empresa.com" required />
       <Field label="Contraseña" name="password" type="password" placeholder="Mínimo 8 caracteres" required />
 
-      {/* Selector de rol (solo admin/superadmin) */}
+      {/* Selector de rol */}
       {isAdmin && (
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1.5">Rol</label>
@@ -142,6 +144,20 @@ export function NewUserForm({
             <option value="user">Usuario — empleado que envía mensajes</option>
             <option value="account">Cuenta/Cliente — empresa con sus propios usuarios</option>
             <option value="reseller">Reseller — distribuidor con sus propios clientes</option>
+          </select>
+        </div>
+      )}
+
+      {isReseller && (
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Tipo de acceso</label>
+          <select
+            value={form.role}
+            onChange={(e) => setForm({ ...form, role: e.target.value, parentId: '' })}
+            className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 bg-white"
+          >
+            <option value="account">Cliente — empresa que recibe el servicio</option>
+            <option value="user">Usuario — empleado del distribuidor</option>
           </select>
         </div>
       )}
@@ -255,7 +271,11 @@ export function NewUserForm({
           type="submit" disabled={loading}
           className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors"
         >
-          {loading ? 'Creando...' : isReseller ? 'Crear cliente' : 'Crear'}
+          {loading ? 'Creando...' :
+           isReseller && form.role === 'account' ? 'Crear cliente' :
+           isReseller && form.role === 'user'    ? 'Crear usuario' :
+           isAccount                             ? 'Crear usuario' :
+           'Crear'}
         </button>
         <a href="/users" className="text-sm text-slate-500 hover:text-slate-700">Cancelar</a>
       </div>
