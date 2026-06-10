@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { prisma } from '@/lib/prisma'
 import { resolveCredentials } from '@/lib/infobip'
 import { checkBilling, recordDebit } from '@/lib/billing'
 
@@ -30,57 +29,42 @@ export async function POST(req: NextRequest) {
       ? contacts
       : numbers.map((to) => ({ to, message }))
 
-  const campaign = await prisma.campaign.create({
-    data: {
-      name,
-      channel: 'sms',
-      status: 'sending',
-      total: recipients.length,
-      userId: session.userId,
-    },
-  })
-
-  await prisma.message.createMany({
-    data: recipients.map((c) => ({
-      to: c.to,
-      from: from || null,
-      content: c.message || message,
-      channel: 'sms',
-      status: 'pending',
-      campaignId: campaign.id,
-      userId: session.userId,
-    })),
-  })
-
   try {
     const { apiKey, baseUrl } = await resolveCredentials(session.userId)
+    if (!apiKey || !baseUrl) {
+      return NextResponse.json({ error: 'Credenciales Infobip no configuradas' }, { status: 503 })
+    }
 
-    // Send individually when messages are personalized, bulk otherwise
     const hasPersonalized = recipients.some((c) => c.message && c.message !== message)
-
     let bulkId: string | undefined
+
     if (hasPersonalized) {
-      // Individual sends for personalized messages
       await Promise.allSettled(
         recipients.map((c) =>
-          fetch(`${baseUrl}/sms/2/text/advanced`, {
+          fetch(`https://${baseUrl}/sms/3/messages`, {
             method: 'POST',
             headers: { Authorization: `App ${apiKey}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              messages: [{ from: from || undefined, destinations: [{ to: c.to }], text: c.message || message }],
+              messages: [{
+                from: from || 'Omnic3ntro',
+                destinations: [{ to: c.to }],
+                text: c.message || message,
+                clientReference: session.userId,
+              }],
             }),
           })
         )
       )
     } else {
-      const res = await fetch(`${baseUrl}/sms/2/text/advanced`, {
+      const res = await fetch(`https://${baseUrl}/sms/3/messages`, {
         method: 'POST',
         headers: { Authorization: `App ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [{
-            from: from || undefined,
+            from: from || 'Omnic3ntro',
             destinations: recipients.map((c) => ({ to: c.to })),
             text: message,
+            clientReference: session.userId,
           }],
         }),
       })
@@ -88,27 +72,10 @@ export async function POST(req: NextRequest) {
       bulkId = data.bulkId
     }
 
-    await prisma.campaign.update({
-      where: { id: campaign.id },
-      data: { status: 'sent', sent: recipients.length },
-    })
-    if (bulkId) {
-      await prisma.message.updateMany({
-        where: { campaignId: campaign.id },
-        data: { status: 'sent', bulkId, sentAt: new Date() },
-      })
-    } else {
-      await prisma.message.updateMany({
-        where: { campaignId: campaign.id },
-        data: { status: 'sent', sentAt: new Date() },
-      })
-    }
-
     await recordDebit(session.userId, recipients.length)
     const warning = 'warning' in billing ? billing.warning : undefined
-    return NextResponse.json({ success: true, campaignId: campaign.id, total: recipients.length, warning })
+    return NextResponse.json({ success: true, bulkId, total: recipients.length, warning })
   } catch (err) {
-    await prisma.campaign.update({ where: { id: campaign.id }, data: { status: 'failed' } })
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }
 }

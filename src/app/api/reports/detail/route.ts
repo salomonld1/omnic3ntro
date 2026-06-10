@@ -1,25 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { fetchSmsLogs, fetchWhatsAppLogs } from '@/lib/infobip'
+import type { InfobipSmsLog, InfobipWhatsAppLog } from '@/lib/infobip'
 
-function dateRange(period: string, from?: string, to?: string) {
+function periodDates(period: string, from?: string, to?: string) {
   const now = new Date()
   if (period === 'today') {
     const start = new Date(now); start.setHours(0, 0, 0, 0)
-    return { gte: start }
+    return { sentSince: start.toISOString(), sentUntil: now.toISOString() }
   }
   if (period === 'week') {
     const start = new Date(now); start.setDate(now.getDate() - 7); start.setHours(0, 0, 0, 0)
-    return { gte: start }
+    return { sentSince: start.toISOString(), sentUntil: now.toISOString() }
   }
   if (period === 'month') {
     const start = new Date(now); start.setDate(1); start.setHours(0, 0, 0, 0)
-    return { gte: start }
+    return { sentSince: start.toISOString(), sentUntil: now.toISOString() }
   }
   if (period === 'custom' && from && to) {
-    return { gte: new Date(from), lte: new Date(to + 'T23:59:59') }
+    return {
+      sentSince: new Date(from).toISOString(),
+      sentUntil: new Date(to + 'T23:59:59').toISOString(),
+    }
   }
-  return undefined
+  return {}
+}
+
+type NormalizedMessage = {
+  messageId: string
+  to: string
+  from: string
+  text: string
+  channel: 'sms' | 'whatsapp'
+  sentAt: string
+  status: string
+  pricePerMessage: number | null
+  currency: string | null
+  clientReference: string | null
 }
 
 export async function GET(req: NextRequest) {
@@ -31,97 +49,119 @@ export async function GET(req: NextRequest) {
   const from       = searchParams.get('from') ?? undefined
   const to         = searchParams.get('to') ?? undefined
   const channel    = searchParams.get('channel') ?? undefined
-  const resellerId = searchParams.get('resellerId') ?? undefined
   const userId     = searchParams.get('userId') ?? undefined
   const page       = parseInt(searchParams.get('page') ?? '1')
   const limit      = 50
 
-  // Build allowed user IDs
-  let userIds: string[] = []
-  if (session.role === 'admin') {
-    const where: Record<string, unknown> = { role: { not: 'admin' } }
-    if (resellerId) where.parentId = resellerId
-    if (userId) where.id = userId
-    const users = await prisma.user.findMany({ where, select: { id: true } })
-    userIds = users.map((u) => u.id)
-  } else if (session.role === 'reseller') {
-    const clients = await prisma.user.findMany({
-      where: { parentId: session.userId },
-      select: { id: true },
-    })
-    const clientIds = clients.map((c) => c.id)
-    const childUsers = await prisma.user.findMany({
-      where: { parentId: { in: clientIds } },
-      select: { id: true },
-    })
-    const allIds = [...clientIds, ...childUsers.map((u) => u.id)]
-    userIds = userId ? allIds.filter((id) => id === userId) : allIds
-  } else if (session.role === 'client') {
-    const childUsers = await prisma.user.findMany({
-      where: { parentId: session.userId },
-      select: { id: true },
-    })
-    userIds = userId ? [userId] : [session.userId, ...childUsers.map((u) => u.id)]
-  } else {
-    userIds = [session.userId]
+  // Determine which userIds this session can see
+  let allowedUserIds: Set<string> | null = null // null = see all (admin)
+
+  if (session.role !== 'admin') {
+    let ids: string[] = []
+    if (session.role === 'reseller') {
+      const clients = await prisma.user.findMany({
+        where: { parentId: session.userId },
+        select: { id: true },
+      })
+      const clientIds = clients.map((c) => c.id)
+      const childUsers = await prisma.user.findMany({
+        where: { parentId: { in: clientIds } },
+        select: { id: true },
+      })
+      ids = [...clientIds, ...childUsers.map((u) => u.id)]
+    } else if (session.role === 'client') {
+      const childUsers = await prisma.user.findMany({
+        where: { parentId: session.userId },
+        select: { id: true },
+      })
+      ids = [session.userId, ...childUsers.map((u) => u.id)]
+    } else {
+      ids = [session.userId]
+    }
+    allowedUserIds = new Set(userId ? [userId] : ids)
+  } else if (userId) {
+    allowedUserIds = new Set([userId])
   }
 
-  if (userIds.length === 0) return NextResponse.json({ messages: [], total: 0, pages: 0 })
+  const dates = periodDates(period, from, to)
 
-  const createdAt = dateRange(period, from, to)
-  const where = {
-    userId: { in: userIds },
-    ...(channel ? { channel } : {}),
-    ...(createdAt ? { createdAt } : {}),
-  }
-
-  const [total, messages] = await Promise.all([
-    prisma.message.count({ where }),
-    prisma.message.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
-      select: {
-        id: true,
-        to: true,
-        content: true,
-        channel: true,
-        status: true,
-        cost: true,
-        createdAt: true,
-        sentAt: true,
-        user: { select: { id: true, name: true, pricePerMessage: true, parent: { select: { pricePerMessage: true } } } },
-        campaign: { select: { name: true } },
-      },
-    }),
+  // Fetch from Infobip in parallel
+  const [smsLogs, waLogs] = await Promise.all([
+    channel === 'whatsapp' ? [] : fetchSmsLogs({ ...dates, limit: 1000 }),
+    channel === 'sms'      ? [] : fetchWhatsAppLogs({ ...dates, limit: 1000 }),
   ])
 
-  // Determine effective price per message respecting the two-layer pricing model
-  const sessionRole = session!.role
-  function effectivePrice(m: typeof messages[0]) {
-    if (m.cost != null) return m.cost
-    const isAdminViewingResellerClient = sessionRole === 'admin' && m.user.parent != null
-    const price = isAdminViewingResellerClient
-      ? m.user.parent!.pricePerMessage
-      : m.user.pricePerMessage
-    return price ?? null
-  }
+  // Normalize to unified format
+  const messages: NormalizedMessage[] = [
+    ...smsLogs.map((m: InfobipSmsLog): NormalizedMessage => ({
+      messageId: m.messageId,
+      to: m.to,
+      from: m.from,
+      text: m.text ?? '',
+      channel: 'sms',
+      sentAt: m.sentAt,
+      status: m.status?.groupName?.toLowerCase() ?? 'unknown',
+      pricePerMessage: m.price?.pricePerMessage ?? null,
+      currency: m.price?.currency ?? null,
+      clientReference: m.clientReference ?? null,
+    })),
+    ...waLogs.map((m: InfobipWhatsAppLog): NormalizedMessage => ({
+      messageId: m.messageId,
+      to: m.to,
+      from: m.from,
+      text: m.content?.text ?? m.content?.templateName ?? '',
+      channel: 'whatsapp',
+      sentAt: m.sentAt,
+      status: m.status?.groupName?.toLowerCase() ?? 'unknown',
+      pricePerMessage: m.price?.pricePerMessage ?? null,
+      currency: m.price?.currency ?? null,
+      clientReference: m.callbackData ?? null,
+    })),
+  ]
+
+  // Filter by allowed users
+  const filtered = messages.filter((m) => {
+    if (!allowedUserIds) return true
+    return m.clientReference ? allowedUserIds.has(m.clientReference) : false
+  })
+
+  // Sort by sentAt desc
+  filtered.sort((a, b) => (a.sentAt < b.sentAt ? 1 : -1))
+
+  const total = filtered.length
+  const paginated = filtered.slice((page - 1) * limit, page * limit)
+
+  // Enrich with user info from DB
+  const refIds = [...new Set(paginated.map((m) => m.clientReference).filter(Boolean))] as string[]
+  const users = refIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: refIds } },
+        select: { id: true, name: true, pricePerMessage: true, parent: { select: { pricePerMessage: true } } },
+      })
+    : []
+  const userMap = new Map(users.map((u) => [u.id, u]))
+
+  const result = paginated.map((m) => {
+    const u = m.clientReference ? userMap.get(m.clientReference) : null
+    const isAdminViewingResellerClient = session.role === 'admin' && u?.parent != null
+    const price = m.pricePerMessage ??
+      (isAdminViewingResellerClient ? u?.parent?.pricePerMessage : u?.pricePerMessage) ?? null
+    return { ...m, userName: u?.name ?? m.clientReference ?? 'Desconocido', cost: price }
+  })
 
   const fmt = searchParams.get('format')
   if (fmt === 'csv') {
-    const headers = ['Fecha','Destinatario','Canal','Estado','Usuario','Campaña','Costo','Mensaje']
+    const headers = ['Fecha', 'Destinatario', 'Canal', 'Estado', 'Usuario', 'Costo', 'Mensaje']
     const lines = [
       headers.join(','),
-      ...messages.map((m) => [
-        new Date(m.createdAt).toISOString(),
+      ...result.map((m) => [
+        m.sentAt,
         m.to,
         m.channel,
         m.status,
-        `"${m.user.name}"`,
-        `"${m.campaign?.name ?? ''}"`,
-        effectivePrice(m)?.toFixed(4) ?? '',
-        `"${m.content.replace(/"/g, "'")}"`,
+        `"${m.userName}"`,
+        m.cost?.toFixed(4) ?? '',
+        `"${m.text.replace(/"/g, "'")}"`,
       ].join(',')),
     ]
     return new NextResponse(lines.join('\n'), {
@@ -132,13 +172,5 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  return NextResponse.json({
-    messages: messages.map((m) => ({
-      ...m,
-      cost: effectivePrice(m),
-    })),
-    total,
-    pages: Math.ceil(total / limit),
-    page,
-  })
+  return NextResponse.json({ messages: result, total, pages: Math.ceil(total / limit), page })
 }

@@ -1,25 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { fetchSmsLogs, fetchWhatsAppLogs } from '@/lib/infobip'
+import type { InfobipSmsLog, InfobipWhatsAppLog } from '@/lib/infobip'
 
-function dateRange(period: string, from?: string, to?: string) {
+function periodDates(period: string, from?: string, to?: string) {
   const now = new Date()
   if (period === 'today') {
     const start = new Date(now); start.setHours(0, 0, 0, 0)
-    return { gte: start }
+    return { sentSince: start.toISOString(), sentUntil: now.toISOString() }
   }
   if (period === 'week') {
     const start = new Date(now); start.setDate(now.getDate() - 7); start.setHours(0, 0, 0, 0)
-    return { gte: start }
+    return { sentSince: start.toISOString(), sentUntil: now.toISOString() }
   }
   if (period === 'month') {
     const start = new Date(now); start.setDate(1); start.setHours(0, 0, 0, 0)
-    return { gte: start }
+    return { sentSince: start.toISOString(), sentUntil: now.toISOString() }
   }
   if (period === 'custom' && from && to) {
-    return { gte: new Date(from), lte: new Date(to + 'T23:59:59') }
+    return {
+      sentSince: new Date(from).toISOString(),
+      sentUntil: new Date(to + 'T23:59:59').toISOString(),
+    }
   }
-  return undefined
+  return {}
 }
 
 export async function GET(req: NextRequest) {
@@ -32,115 +37,96 @@ export async function GET(req: NextRequest) {
   const to     = searchParams.get('to') ?? undefined
   const view   = searchParams.get('view') ?? 'reseller' // 'reseller' | 'client'
 
-  const createdAt = dateRange(period, from, to)
-  const msgWhere = createdAt ? { createdAt } : {}
+  const dates = periodDates(period, from, to)
+
+  const [smsLogs, waLogs] = await Promise.all([
+    fetchSmsLogs({ ...dates, limit: 1000 }),
+    fetchWhatsAppLogs({ ...dates, limit: 1000 }),
+  ])
+
+  // Build map: clientReference → { sms, whatsapp }
+  const msgMap = new Map<string, { sms: number; whatsapp: number }>()
+  function inc(ref: string | null | undefined, ch: 'sms' | 'whatsapp') {
+    if (!ref) return
+    if (!msgMap.has(ref)) msgMap.set(ref, { sms: 0, whatsapp: 0 })
+    msgMap.get(ref)![ch]++
+  }
+  for (const m of smsLogs as InfobipSmsLog[]) inc(m.clientReference, 'sms')
+  for (const m of waLogs as InfobipWhatsAppLog[]) inc(m.callbackData, 'whatsapp')
 
   if (session.role === 'admin') {
     if (view === 'reseller') {
-      // Group by reseller
       const resellers = await prisma.user.findMany({
         where: { role: 'reseller' },
         select: {
-          id: true, name: true,
-          children: {
-            select: {
-              messages: { where: msgWhere, select: { channel: true } },
-            },
-          },
-          messages: { where: msgWhere, select: { channel: true } },
+          id: true,
+          name: true,
+          children: { select: { id: true, children: { select: { id: true } } } },
         },
         orderBy: { name: 'asc' },
       })
 
-      // Also get direct clients (no reseller)
-      const directClients = await prisma.user.findMany({
-        where: { role: 'user', parentId: null },
-        select: {
-          id: true, name: true,
-          messages: { where: msgWhere, select: { channel: true } },
-        },
-      })
-
       const rows = resellers.map((r) => {
-        const allMsgs = [
-          ...r.messages,
-          ...r.children.flatMap((c) => c.messages),
+        const allIds = [
+          r.id,
+          ...r.children.map((c) => c.id),
+          ...r.children.flatMap((c) => c.children.map((u) => u.id)),
         ]
-        return {
-          name: r.name,
-          sms: allMsgs.filter((m) => m.channel === 'sms').length,
-          whatsapp: allMsgs.filter((m) => m.channel === 'whatsapp').length,
-          rcs: allMsgs.filter((m) => m.channel === 'rcs').length,
-          total: allMsgs.length,
-        }
+        const sms = allIds.reduce((sum, id) => sum + (msgMap.get(id)?.sms ?? 0), 0)
+        const whatsapp = allIds.reduce((sum, id) => sum + (msgMap.get(id)?.whatsapp ?? 0), 0)
+        return { name: r.name, sms, whatsapp, rcs: 0, total: sms + whatsapp }
       })
 
-      const directTotal = directClients.flatMap((c) => c.messages)
-      if (directTotal.length > 0) {
-        rows.push({
-          name: 'Clientes directos',
-          sms: directTotal.filter((m) => m.channel === 'sms').length,
-          whatsapp: directTotal.filter((m) => m.channel === 'whatsapp').length,
-          rcs: directTotal.filter((m) => m.channel === 'rcs').length,
-          total: directTotal.length,
-        })
+      // Direct clients (no reseller)
+      const directClients = await prisma.user.findMany({
+        where: { role: { in: ['client', 'user'] }, parentId: null },
+        select: { id: true },
+      })
+      const directSms = directClients.reduce((sum, c) => sum + (msgMap.get(c.id)?.sms ?? 0), 0)
+      const directWa  = directClients.reduce((sum, c) => sum + (msgMap.get(c.id)?.whatsapp ?? 0), 0)
+      if (directSms + directWa > 0) {
+        rows.push({ name: 'Clientes directos', sms: directSms, whatsapp: directWa, rcs: 0, total: directSms + directWa })
       }
 
       return NextResponse.json(rows)
     }
 
-    // view === 'client' — all users grouped individually
+    // view === 'client'
     const users = await prisma.user.findMany({
       where: { role: { not: 'admin' } },
-      select: {
-        id: true, name: true, role: true,
-        parent: { select: { name: true } },
-        messages: { where: msgWhere, select: { channel: true } },
-      },
+      select: { id: true, name: true, role: true, parent: { select: { name: true } } },
       orderBy: { name: 'asc' },
     })
-
-    return NextResponse.json(users.map((u) => ({
-      name: u.name,
-      reseller: u.parent?.name ?? null,
-      role: u.role,
-      sms: u.messages.filter((m) => m.channel === 'sms').length,
-      whatsapp: u.messages.filter((m) => m.channel === 'whatsapp').length,
-      rcs: u.messages.filter((m) => m.channel === 'rcs').length,
-      total: u.messages.length,
-    })))
+    return NextResponse.json(users.map((u) => {
+      const c = msgMap.get(u.id) ?? { sms: 0, whatsapp: 0 }
+      return { name: u.name, reseller: u.parent?.name ?? null, role: u.role, sms: c.sms, whatsapp: c.whatsapp, rcs: 0, total: c.sms + c.whatsapp }
+    }))
   }
 
   if (session.role === 'reseller') {
     const clients = await prisma.user.findMany({
       where: { parentId: session.userId },
-      select: {
-        id: true, name: true,
-        messages: { where: msgWhere, select: { channel: true } },
-      },
+      select: { id: true, name: true },
       orderBy: { name: 'asc' },
     })
-
-    return NextResponse.json(clients.map((c) => ({
-      name: c.name,
-      sms: c.messages.filter((m) => m.channel === 'sms').length,
-      whatsapp: c.messages.filter((m) => m.channel === 'whatsapp').length,
-      rcs: c.messages.filter((m) => m.channel === 'rcs').length,
-      total: c.messages.length,
-    })))
+    return NextResponse.json(clients.map((c) => {
+      const m = msgMap.get(c.id) ?? { sms: 0, whatsapp: 0 }
+      return { name: c.name, sms: m.sms, whatsapp: m.whatsapp, rcs: 0, total: m.sms + m.whatsapp }
+    }))
   }
 
-  // User — own consumption
-  const msgs = await prisma.message.findMany({
-    where: { userId: session.userId, ...msgWhere },
-    select: { channel: true },
-  })
+  if (session.role === 'client') {
+    const children = await prisma.user.findMany({
+      where: { parentId: session.userId },
+      select: { id: true },
+    })
+    const allIds = [session.userId, ...children.map((c) => c.id)]
+    const sms = allIds.reduce((sum, id) => sum + (msgMap.get(id)?.sms ?? 0), 0)
+    const wa  = allIds.reduce((sum, id) => sum + (msgMap.get(id)?.whatsapp ?? 0), 0)
+    return NextResponse.json([{ name: 'Mi consumo', sms, whatsapp: wa, rcs: 0, total: sms + wa }])
+  }
 
-  return NextResponse.json([{
-    name: 'Mi consumo',
-    sms: msgs.filter((m) => m.channel === 'sms').length,
-    whatsapp: msgs.filter((m) => m.channel === 'whatsapp').length,
-    rcs: msgs.filter((m) => m.channel === 'rcs').length,
-    total: msgs.length,
-  }])
+  // user
+  const m = msgMap.get(session.userId) ?? { sms: 0, whatsapp: 0 }
+  return NextResponse.json([{ name: 'Mi consumo', sms: m.sms, whatsapp: m.whatsapp, rcs: 0, total: m.sms + m.whatsapp }])
 }
