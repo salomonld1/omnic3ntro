@@ -1,7 +1,5 @@
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
-
 export async function sendBalanceAlert(params: {
   to: string
   clientName: string
@@ -9,6 +7,7 @@ export async function sendBalanceAlert(params: {
   alertAmount: number
 }) {
   if (!process.env.RESEND_API_KEY) return
+  const resend = new Resend(process.env.RESEND_API_KEY)
 
   await resend.emails.send({
     from: 'Omnic3ntro <alertas@omnic3ntro.com>',
