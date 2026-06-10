@@ -69,7 +69,7 @@ export async function resolveReportAppIds(userId: string, role: string): Promise
     return client?.infobipAppId ? [client.infobipAppId] : null
   }
 
-  // user — usa el appId de su cliente padre
+  // user — usa el appId de su padre (cliente o reseller)
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { parent: { select: { infobipAppId: true } } },
