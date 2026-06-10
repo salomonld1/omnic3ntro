@@ -79,9 +79,9 @@ export async function sendSms(
 
   return infobipRequest('/sms/3/messages', 'POST', {
     messages: [{
-      from: params.from || 'Omnic3ntro',
+      sender: params.from || 'Omnic3ntro',
       destinations,
-      text: params.text,
+      content: { text: params.text },
       notifyUrl: params.notifyUrl,
       sendAt: params.scheduleTime,
       clientReference: params.clientReference,

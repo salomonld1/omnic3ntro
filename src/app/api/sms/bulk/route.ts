@@ -46,9 +46,9 @@ export async function POST(req: NextRequest) {
             headers: { Authorization: `App ${apiKey}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
               messages: [{
-                from: from || 'Omnic3ntro',
+                sender: from || 'Omnic3ntro',
                 destinations: [{ to: c.to }],
-                text: c.message || message,
+                content: { text: c.message || message },
                 clientReference: session.userId,
               }],
             }),
@@ -61,9 +61,9 @@ export async function POST(req: NextRequest) {
         headers: { Authorization: `App ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [{
-            from: from || 'Omnic3ntro',
+            sender: from || 'Omnic3ntro',
             destinations: recipients.map((c) => ({ to: c.to })),
-            text: message,
+            content: { text: message },
             clientReference: session.userId,
           }],
         }),
