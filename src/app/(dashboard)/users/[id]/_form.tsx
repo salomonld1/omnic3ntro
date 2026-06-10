@@ -43,7 +43,33 @@ export function EditUserForm({
     baseUrl: user.infobipBaseUrl ?? '',
   })
   const [apiKey, setApiKey] = useState(user.apiKey)
-  const [price, setPrice] = useState('')
+
+  // Parse existing pricing
+  const existingPricing = (() => { try { return user.pricing ? JSON.parse(user.pricing) : {} } catch { return {} } })()
+  const [pricingForm, setPricingForm] = useState({
+    sms_marketing:      existingPricing.sms?.marketing?.toString()      ?? '',
+    sms_transaccional:  existingPricing.sms?.transaccional?.toString()  ?? '',
+    wa_marketing:       existingPricing.whatsapp?.marketing?.toString() ?? '',
+    wa_otp:             existingPricing.whatsapp?.otp?.toString()       ?? '',
+    wa_notificacion:    existingPricing.whatsapp?.notificacion?.toString() ?? '',
+    rcs_simple:         existingPricing.rcs?.simple?.toString()         ?? '',
+    rcs_basic:          existingPricing.rcs?.basic?.toString()          ?? '',
+    rcs_conversacional: existingPricing.rcs?.conversacional?.toString() ?? '',
+  })
+
+  function pv(v: string) { return v === '' ? undefined : parseFloat(v) }
+
+  async function savePricing(e: React.FormEvent) {
+    e.preventDefault()
+    await patch({
+      pricing: JSON.stringify({
+        sms:      { marketing: pv(pricingForm.sms_marketing),      transaccional: pv(pricingForm.sms_transaccional) },
+        whatsapp: { marketing: pv(pricingForm.wa_marketing),        otp: pv(pricingForm.wa_otp), notificacion: pv(pricingForm.wa_notificacion) },
+        rcs:      { simple: pv(pricingForm.rcs_simple),             basic: pv(pricingForm.rcs_basic), conversacional: pv(pricingForm.rcs_conversacional) },
+      }),
+    }, 'pricing')
+  }
+
   const [billing, setBilling] = useState({
     billingType: user.billingType ?? '',
     balance: user.balance ?? 0,
@@ -271,40 +297,71 @@ export function EditUserForm({
         </div>
       )}
 
-      {/* Precio por mensaje — solo visible para quien establece ese precio */}
-      {user.role !== 'admin' && !(viewerRole === 'reseller' && user.role === 'reseller') && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6">
-          <h2 className="font-semibold text-slate-800 mb-1">Precio por mensaje</h2>
-          <p className="text-sm text-slate-500 mb-5">
-            {viewerRole === 'admin' && user.role === 'reseller'
-              ? 'Precio que C3ntro le cobra a este reseller por cada mensaje. El reseller no puede ver este precio.'
-              : viewerRole === 'reseller'
-              ? 'Precio que le cobras a este cliente por cada mensaje enviado.'
-              : 'Precio que se le cobra a este cliente por cada mensaje enviado.'}
-          </p>
-          <form onSubmit={async (e) => { e.preventDefault(); await patch({ pricing: price || null }, 'price') }} className="space-y-4">
-            <div className="flex items-center gap-3 max-w-xs">
-              <div className="relative flex-1">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+      {/* Tarifas por canal — admin edita clientes directos, reseller edita sus clientes */}
+      {(user.role === 'account' || user.role === 'client') && (() => {
+        const isAdmin    = viewerRole === 'admin' || viewerRole === 'superadmin'
+        const isReseller = viewerRole === 'reseller'
+        const isDirectClient   = !user.parentId
+        const isResellerClient = !!user.parentId
+        const canEdit = (isAdmin && isDirectClient) || (isReseller && isResellerClient)
+        if (!canEdit) return null
+
+        function PriceInput({ label, k }: { label: string; k: keyof typeof pricingForm }) {
+          return (
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">{label}</label>
+              <div className="relative">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">$</span>
                 <input
-                  type="number" step="0.0001" min="0" value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  placeholder="0.2200"
-                  className="w-full pl-7 pr-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent"
+                  type="number" step="0.0001" min="0" placeholder="0.0000"
+                  value={pricingForm[k]}
+                  onChange={(e) => setPricingForm({ ...pricingForm, [k]: e.target.value })}
+                  className="w-full pl-6 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
                 />
               </div>
-              <span className="text-sm text-slate-500">MXN / mensaje</span>
             </div>
-            <div className="flex items-center gap-3">
-              <button type="submit" disabled={loading === 'price'}
-                className="px-4 py-2 bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors">
-                {loading === 'price' ? 'Guardando...' : 'Guardar precio'}
-              </button>
-              {saved === 'price' && <span className="text-sm text-emerald-600">✓ Guardado</span>}
-            </div>
-          </form>
-        </div>
-      )}
+          )
+        }
+
+        return (
+          <div className="bg-white rounded-xl border border-slate-200 p-6">
+            <h2 className="font-semibold text-slate-800 mb-1">Tarifas por canal</h2>
+            <p className="text-sm text-slate-500 mb-5">Precio en MXN por mensaje enviado según canal y categoría.</p>
+            <form onSubmit={savePricing} className="space-y-5">
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">SMS</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <PriceInput label="Marketing"     k="sms_marketing" />
+                  <PriceInput label="Transaccional" k="sms_transaccional" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">WhatsApp</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <PriceInput label="Marketing"    k="wa_marketing" />
+                  <PriceInput label="OTP"          k="wa_otp" />
+                  <PriceInput label="Notificación" k="wa_notificacion" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">RCS</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <PriceInput label="Simple"         k="rcs_simple" />
+                  <PriceInput label="Basic"          k="rcs_basic" />
+                  <PriceInput label="Conversacional" k="rcs_conversacional" />
+                </div>
+              </div>
+              <div className="flex items-center gap-3 pt-1">
+                <button type="submit" disabled={loading === 'pricing'}
+                  className="px-4 py-2 bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors">
+                  {loading === 'pricing' ? 'Guardando...' : 'Guardar tarifas'}
+                </button>
+                {saved === 'pricing' && <span className="text-sm text-emerald-600">✓ Guardado</span>}
+              </div>
+            </form>
+          </div>
+        )
+      })()}
 
       {/* Facturación — para clientes (la billing vive en el nivel cliente) */}
       {user.role === 'client' && (

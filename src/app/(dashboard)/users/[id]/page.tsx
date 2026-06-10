@@ -4,13 +4,18 @@ import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { EditUserForm } from './_form'
 import { getSession } from '@/lib/auth'
+import { getEffectiveRole } from '@/lib/dev-role'
 import { prisma } from '@/lib/prisma'
+
+const ADMIN_ROLES = ['admin', 'superadmin']
 
 export default async function EditUserPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await getSession()
-  if (!session || !['admin', 'reseller', 'client'].includes(session.role)) {
-    redirect('/dashboard')
-  }
+  if (!session) redirect('/dashboard')
+
+  const viewerRole = await getEffectiveRole(session.role)
+  const allowed = [...ADMIN_ROLES, 'reseller', 'account', 'client']
+  if (!allowed.includes(viewerRole)) redirect('/dashboard')
 
   const { id } = await params
 
@@ -36,17 +41,12 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
 
   if (!user) notFound()
 
-  // Reseller can only edit their direct clients (role='client')
-  if (session.role === 'reseller' && user.parentId !== session.userId) {
+  // Access control: resellers only edit their clients, accounts only edit their users
+  if ((viewerRole === 'reseller' || viewerRole === 'account' || viewerRole === 'client') && user.parentId !== session.userId) {
     redirect('/users')
   }
 
-  // Client can only edit their direct users (role='user')
-  if (session.role === 'client' && user.parentId !== session.userId) {
-    redirect('/users')
-  }
-
-  const resellers = session.role === 'admin'
+  const resellers = ADMIN_ROLES.includes(viewerRole)
     ? await prisma.user.findMany({
         where: { role: 'reseller', NOT: { id } },
         select: { id: true, name: true },
@@ -55,8 +55,8 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
     : []
 
   const backLabel =
-    session.role === 'reseller' ? 'Volver a Mis Clientes' :
-    session.role === 'client'   ? 'Volver a Mis Usuarios' :
+    viewerRole === 'reseller'                               ? 'Volver a Mis Clientes' :
+    viewerRole === 'account' || viewerRole === 'client'     ? 'Volver a Mis Usuarios' :
     'Volver a Usuarios'
 
   return (
@@ -69,7 +69,7 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
         </Link>
         <EditUserForm
           user={{ ...user, balanceExpiresAt: user.balanceExpiresAt?.toISOString() ?? null }}
-          viewerRole={session.role}
+          viewerRole={viewerRole}
           resellers={resellers}
         />
       </main>
