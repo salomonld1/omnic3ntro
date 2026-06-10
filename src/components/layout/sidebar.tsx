@@ -51,6 +51,7 @@ const clientNavItemsBottom = [
   { href: '/users', label: 'Mis Usuarios', icon: UserCog },
   { href: '/contacts', label: 'Contactos', icon: Users },
   { href: '/templates', label: 'Plantillas', icon: FileText },
+  { href: '/pricing', label: 'Mis Tarifas', icon: CreditCard },
   { href: '/settings', label: 'Configuración', icon: Settings },
 ]
 
