@@ -17,6 +17,7 @@ type UserRow = {
   apiKey: string | null
   infobipBaseUrl: string | null
   infobipAppId: string | null
+  pricePerMessage: number | null
   createdAt: string
   parent: { id: string; name: string; parentId: string | null } | null
   billingType: string | null
@@ -447,6 +448,7 @@ export function UserList({
                 )}
                 <th className="px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">Conector</th>
                 <th className="px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">App ID</th>
+                <th className="px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">Precio/msg</th>
                 <th className="px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden lg:table-cell">API Key</th>
                 <th className="px-5 py-3 hidden md:table-cell">
                   <button onClick={() => handleSort('balance')} className="flex items-center gap-1 text-xs font-semibold text-slate-500 uppercase tracking-wide hover:text-slate-800 transition-colors">
@@ -515,6 +517,13 @@ export function UserList({
                         <span className="font-mono text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
                           {u.infobipAppId}
                         </span>
+                      ) : (
+                        <span className="text-slate-400 text-xs">—</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 hidden md:table-cell">
+                      {u.pricePerMessage != null ? (
+                        <span className="font-mono text-xs text-slate-700">${u.pricePerMessage.toFixed(4)}</span>
                       ) : (
                         <span className="text-slate-400 text-xs">—</span>
                       )}

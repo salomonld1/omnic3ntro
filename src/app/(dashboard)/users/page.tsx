@@ -32,6 +32,7 @@ export default async function UsersPage() {
       parentId: true,
       apiKey: true,
       infobipBaseUrl: true,
+      pricePerMessage: true,
       infobipAppId: true,
       billingType: true,
       balance: true,
