@@ -376,7 +376,7 @@ export function UserList({
     'Nuevo'
 
   const showParentCol = viewerRole === 'admin'
-  const showBillingBtn = (u: UserRow) => u.role === 'client'
+  const showBillingBtn = (u: UserRow) => u.role === 'client' || u.role === 'reseller'
 
   return (
     <div>
