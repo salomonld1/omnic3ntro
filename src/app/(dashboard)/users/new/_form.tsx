@@ -188,6 +188,7 @@ export function NewUserForm({
             value={form.infobipAppId}
             onChange={(e) => setForm({ ...form, infobipAppId: e.target.value })}
             placeholder="Ej: A1B2C3D4"
+            required={form.role === 'client' || form.role === 'reseller'}
             className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent font-mono"
           />
           <p className="text-xs text-slate-400 mt-1">ID de la Application creada en el portal de Infobip para filtrar reportes por cliente.</p>

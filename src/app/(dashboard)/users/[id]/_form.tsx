@@ -269,6 +269,7 @@ export function EditUserForm({
               <input type="text" value={infobip.appId}
                 onChange={(e) => setInfobip({ ...infobip, appId: e.target.value })}
                 placeholder="Ej: A1B2C3D4"
+                required={user.role === 'client' || user.role === 'reseller'}
                 className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent font-mono" />
               <p className="text-xs text-slate-400 mt-1">ID de la Application creada en el portal de Infobip. Se usa para filtrar reportes por cliente.</p>
             </div>
