@@ -24,14 +24,37 @@ const STATUS: Record<string, { label: string; color: string }> = {
 export default async function DashboardPage() {
   const session = await getSession()
   const uid = session?.userId
+  const role = session?.role
 
   const now = new Date()
   const weekAgo = new Date(now)
   weekAgo.setDate(now.getDate() - 7)
   weekAgo.setHours(0, 0, 0, 0)
 
-  const where     = { userId: uid }
-  const whereWeek = { userId: uid, createdAt: { gte: weekAgo } }
+  // Resolver qué userIds incluir según el rol
+  let userFilter: { userId?: string | { in: string[] } } = {}
+
+  if (role === 'admin') {
+    userFilter = {} // ve todo
+  } else if (role === 'reseller' && uid) {
+    // reseller ve sus propios mensajes + los de sus clientes directos + los usuarios de esos clientes
+    const clients = await prisma.user.findMany({
+      where: { parentId: uid },
+      select: { id: true, children: { select: { id: true } } },
+    })
+    const ids = [uid, ...clients.map(c => c.id), ...clients.flatMap(c => c.children.map(u => u.id))]
+    userFilter = { userId: { in: ids } }
+  } else if (role === 'client' && uid) {
+    // cliente ve sus propios mensajes + los de sus usuarios
+    const users = await prisma.user.findMany({ where: { parentId: uid }, select: { id: true } })
+    const ids = [uid, ...users.map(u => u.id)]
+    userFilter = { userId: { in: ids } }
+  } else if (uid) {
+    userFilter = { userId: uid }
+  }
+
+  const where     = userFilter
+  const whereWeek = { ...userFilter, createdAt: { gte: weekAgo } }
 
   const [total, delivered, failed, pending, smsMsgs, waMsgs, rcsMsgs, recent, weekMsgs] =
     await Promise.all([
