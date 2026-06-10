@@ -335,25 +335,30 @@ export function EditUserForm({
           {/* Tipo de facturación */}
           <div className="mb-5">
             <p className="text-sm font-medium text-slate-700 mb-2">Tipo</p>
-            <div className="flex gap-2">
-              {[
-                { value: '', label: 'Sin facturación' },
-                { value: 'prepaid', label: 'Prepago' },
-                { value: 'postpaid', label: 'Postpago' },
-              ].map((opt) => (
-                <button key={opt.value} type="button"
-                  onClick={() => changeBillingType(opt.value)}
-                  disabled={loading === 'billingType'}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors disabled:opacity-50 ${
-                    billing.billingType === opt.value
-                      ? 'bg-sky-600 text-white border-sky-600'
-                      : 'bg-white text-slate-600 border-slate-300 hover:border-sky-400'
-                  }`}>
-                  {opt.label}
-                </button>
-              ))}
-              {saved === 'billingType' && <span className="text-sm text-emerald-600 self-center ml-1">✓</span>}
-            </div>
+            {billing.billingType ? (
+              <span className={`inline-flex px-4 py-2 rounded-lg text-sm font-medium border ${
+                billing.billingType === 'prepaid'
+                  ? 'bg-sky-50 text-sky-700 border-sky-200'
+                  : 'bg-violet-50 text-violet-700 border-violet-200'
+              }`}>
+                {billing.billingType === 'prepaid' ? 'Prepago' : 'Postpago'}
+              </span>
+            ) : (
+              <div className="flex gap-2">
+                {[
+                  { value: 'prepaid', label: 'Prepago' },
+                  { value: 'postpaid', label: 'Postpago' },
+                ].map((opt) => (
+                  <button key={opt.value} type="button"
+                    onClick={() => changeBillingType(opt.value)}
+                    disabled={loading === 'billingType'}
+                    className="px-4 py-2 rounded-lg text-sm font-medium border bg-white text-slate-600 border-slate-300 hover:border-sky-400 transition-colors disabled:opacity-50">
+                    {opt.label}
+                  </button>
+                ))}
+                {saved === 'billingType' && <span className="text-sm text-emerald-600 self-center ml-1">✓</span>}
+              </div>
+            )}
           </div>
 
           {/* Prepago */}

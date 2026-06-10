@@ -117,25 +117,30 @@ function BillingModal({ user, onClose, onUpdate }: {
         <div className="p-5 space-y-5">
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Tipo de facturación</p>
-            <div className="flex gap-2">
-              {[
-                { value: '', label: 'Sin facturación' },
-                { value: 'prepaid', label: 'Prepago' },
-                { value: 'postpaid', label: 'Postpago' },
-              ].map((opt) => (
-                <button key={opt.value} type="button"
-                  onClick={() => changeBillingType(opt.value)}
-                  disabled={loading === 'type'}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-50 ${
-                    billingType === opt.value
-                      ? 'bg-sky-600 text-white border-sky-600'
-                      : 'bg-white text-slate-600 border-slate-300 hover:border-sky-400'
-                  }`}>
-                  {opt.label}
-                </button>
-              ))}
-              {saved === 'type' && <span className="text-xs text-emerald-600 self-center">✓</span>}
-            </div>
+            {user.billingType ? (
+              <span className={`inline-flex px-3 py-1.5 rounded-lg text-xs font-medium border ${
+                user.billingType === 'prepaid'
+                  ? 'bg-sky-50 text-sky-700 border-sky-200'
+                  : 'bg-violet-50 text-violet-700 border-violet-200'
+              }`}>
+                {user.billingType === 'prepaid' ? 'Prepago' : 'Postpago'}
+              </span>
+            ) : (
+              <div className="flex gap-2">
+                {[
+                  { value: 'prepaid', label: 'Prepago' },
+                  { value: 'postpaid', label: 'Postpago' },
+                ].map((opt) => (
+                  <button key={opt.value} type="button"
+                    onClick={() => changeBillingType(opt.value)}
+                    disabled={loading === 'type'}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium border bg-white text-slate-600 border-slate-300 hover:border-sky-400 transition-colors disabled:opacity-50">
+                    {opt.label}
+                  </button>
+                ))}
+                {saved === 'type' && <span className="text-xs text-emerald-600 self-center">✓</span>}
+              </div>
+            )}
           </div>
 
           {billingType === 'prepaid' && (

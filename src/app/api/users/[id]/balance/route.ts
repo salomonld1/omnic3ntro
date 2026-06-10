@@ -26,8 +26,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const body = await request.json()
   const { type, amount, expiresAt, creditLimit, billingType, alertAmount, note } = body
 
-  // Change billing type
+  // Change billing type (only allowed if not yet set)
   if (billingType !== undefined) {
+    if (user.billingType) {
+      return NextResponse.json({ error: 'El tipo de facturación no se puede cambiar una vez asignado' }, { status: 400 })
+    }
     await prisma.user.update({
       where: { id },
       data: {
