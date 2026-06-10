@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Search, Wallet, CreditCard, ChevronRight } from 'lucide-react'
+import { Search, Wallet, CreditCard } from 'lucide-react'
 
 type Account = {
   id: string; name: string; email: string; role: string
@@ -32,7 +32,7 @@ function roleBadge(role: string) {
 export function BillingClient({ accounts, adminRole }: { accounts: Account[]; adminRole: string }) {
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Account | null>(null)
-  const [panel, setPanel] = useState<'topup' | 'limit' | 'type' | null>(null)
+  const [panel, setPanel] = useState<'topup' | 'limit' | null>(null)
   const [amount, setAmount] = useState('')
   const [expiry, setExpiry] = useState('')
   const [newType, setNewType] = useState('')
@@ -51,7 +51,7 @@ export function BillingClient({ accounts, adminRole }: { accounts: Account[]; ad
     return false
   }
 
-  function openPanel(a: Account, type: 'topup' | 'limit' | 'type') {
+  function openPanel(a: Account, type: 'topup' | 'limit') {
     setSelected(a); setPanel(type); setAmount(''); setExpiry(''); setMsg(null)
     setNewType(a.billingType ?? 'prepaid')
   }
@@ -61,7 +61,6 @@ export function BillingClient({ accounts, adminRole }: { accounts: Account[]; ad
     setLoading(true); setMsg(null)
     try {
       let body: Record<string, unknown> = {}
-      if (panel === 'type')  body = { billingType: newType }
       if (panel === 'topup') body = { type: 'topup', amount, expiresAt: expiry || undefined }
       if (panel === 'limit') body = { type: 'set_limit', creditLimit: amount }
 
@@ -134,14 +133,14 @@ export function BillingClient({ accounts, adminRole }: { accounts: Account[]; ad
                   {a.billingType === 'postpaid' ? fmt(a.creditLimit) : '—'}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  {canManageBalance(a) && (
+                  {canManageBalance(a) && a.billingType && (
                     <button
-                      onClick={() => openPanel(a, a.billingType === 'prepaid' ? 'topup' : a.billingType === 'postpaid' ? 'limit' : 'type')}
+                      onClick={() => openPanel(a, a.billingType === 'prepaid' ? 'topup' : 'limit')}
                       className="flex items-center gap-1 ml-auto px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium rounded-lg transition-colors"
                     >
-                      {a.billingType === 'prepaid' ? <><Wallet className="w-3 h-3" /> Asignar saldo</> :
-                       a.billingType === 'postpaid' ? <><CreditCard className="w-3 h-3" /> Ajustar límite</> :
-                       <><ChevronRight className="w-3 h-3" /> Configurar</>}
+                      {a.billingType === 'prepaid'
+                        ? <><Wallet className="w-3 h-3" /> Asignar saldo</>
+                        : <><CreditCard className="w-3 h-3" /> Ajustar límite</>}
                     </button>
                   )}
                 </td>
@@ -157,26 +156,10 @@ export function BillingClient({ accounts, adminRole }: { accounts: Account[]; ad
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
             <div>
               <h2 className="text-lg font-semibold text-slate-800">
-                {panel === 'topup'  ? 'Asignar saldo'    :
-                 panel === 'limit'  ? 'Ajustar límite'   :
-                 'Configurar facturación'}
+                {panel === 'topup' ? 'Asignar saldo' : 'Ajustar límite de crédito'}
               </h2>
               <p className="text-sm text-slate-500">{selected.name}</p>
             </div>
-
-            {panel === 'type' && (
-              <div className="space-y-3">
-                <label className="block text-sm font-medium text-slate-700">Tipo de facturación</label>
-                <div className="flex gap-3">
-                  {['prepaid', 'postpaid'].map((t) => (
-                    <label key={t} className={`flex-1 flex items-center gap-2 px-4 py-3 rounded-lg border-2 cursor-pointer transition-colors ${newType === t ? 'border-sky-500 bg-sky-50' : 'border-slate-200 hover:border-slate-300'}`}>
-                      <input type="radio" checked={newType === t} onChange={() => setNewType(t)} className="sr-only" />
-                      <span className="text-sm font-medium">{t === 'prepaid' ? 'Prepago' : 'Pospago'}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {panel === 'topup' && (
               <div className="space-y-3">

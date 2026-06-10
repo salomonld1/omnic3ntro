@@ -8,12 +8,14 @@ import { prisma } from '@/lib/prisma'
 
 export default async function NewUserPage() {
   const session = await getSession()
-  if (!session || !['admin', 'reseller', 'client'].includes(session.role)) {
-    redirect('/dashboard')
-  }
+  const ADMIN_ROLES = ['admin', 'superadmin']
+  const allowed = [...ADMIN_ROLES, 'reseller', 'account', 'client']
+  if (!session || !allowed.includes(session.role)) redirect('/dashboard')
 
-  // Admin needs both resellers (to assign a client to) and direct clients (to assign a user to)
-  const resellers = session.role === 'admin'
+  const isAdmin    = ADMIN_ROLES.includes(session.role)
+  const isReseller = session.role === 'reseller'
+
+  const resellers = isAdmin
     ? await prisma.user.findMany({
         where: { role: 'reseller' },
         select: { id: true, name: true },
@@ -21,22 +23,28 @@ export default async function NewUserPage() {
       })
     : []
 
-  const clients = session.role === 'admin'
+  const clients = isAdmin
     ? await prisma.user.findMany({
-        where: { role: 'client' },
+        where: { role: { in: ['account', 'client'] } },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      })
+    : isReseller
+    ? await prisma.user.findMany({
+        where: { parentId: session.userId, role: { in: ['account', 'client'] } },
         select: { id: true, name: true },
         orderBy: { name: 'asc' },
       })
     : []
 
   const title =
-    session.role === 'reseller' ? 'Nuevo Cliente'  :
-    session.role === 'client'   ? 'Nuevo Usuario'  :
+    isReseller                  ? 'Nuevo Cliente / Usuario' :
+    session.role === 'account' || session.role === 'client' ? 'Nuevo Usuario' :
     'Nuevo Usuario'
 
   const backLabel =
-    session.role === 'reseller' ? 'Volver a Mis Clientes' :
-    session.role === 'client'   ? 'Volver a Mis Usuarios' :
+    isReseller                  ? 'Volver' :
+    session.role === 'account' || session.role === 'client' ? 'Volver a Mis Usuarios' :
     'Volver a Usuarios'
 
   return (
@@ -54,6 +62,7 @@ export default async function NewUserPage() {
              'Crear nuevo usuario'}
           </h2>
           <NewUserForm viewerRole={session.role} resellers={resellers} clients={clients} />
+
         </div>
       </main>
     </div>
