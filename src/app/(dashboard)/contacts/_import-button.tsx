@@ -1,12 +1,18 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Upload, X, AlertCircle, CheckCircle, FileText } from 'lucide-react'
+import { Upload, X, AlertCircle, CheckCircle, FileText, Tag } from 'lucide-react'
 import { parseContactsFile } from '@/lib/parse-contacts'
 
 type Status = 'idle' | 'preview' | 'importing' | 'done' | 'error'
 
-export function ImportContactsButton({ onImported }: { onImported: () => void }) {
+export function ImportContactsButton({
+  onImported,
+  existingTags = [],
+}: {
+  onImported: () => void
+  existingTags?: string[]
+}) {
   const [open, setOpen] = useState(false)
   const [status, setStatus] = useState<Status>('idle')
   const [fileName, setFileName] = useState('')
@@ -14,6 +20,8 @@ export function ImportContactsButton({ onImported }: { onImported: () => void })
   const [total, setTotal] = useState(0)
   const [result, setResult] = useState({ created: 0, skipped: 0 })
   const [error, setError] = useState('')
+  const [tagInput, setTagInput] = useState('')
+  const [selectedTag, setSelectedTag] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const allContactsRef = useRef<{ telefono: string; nombre?: string; email?: string; pais?: string }[]>([])
 
@@ -23,6 +31,8 @@ export function ImportContactsButton({ onImported }: { onImported: () => void })
     setPreview([])
     setTotal(0)
     setError('')
+    setTagInput('')
+    setSelectedTag('')
     allContactsRef.current = []
   }
 
@@ -44,6 +54,8 @@ export function ImportContactsButton({ onImported }: { onImported: () => void })
     }
   }
 
+  const effectiveTag = tagInput.trim() || selectedTag
+
   async function handleImport() {
     setStatus('importing')
     try {
@@ -57,6 +69,7 @@ export function ImportContactsButton({ onImported }: { onImported: () => void })
             email: c.email,
             country: c.pais,
           })),
+          tags: effectiveTag || undefined,
         }),
       })
       const data = await res.json()
@@ -122,6 +135,39 @@ export function ImportContactsButton({ onImported }: { onImported: () => void })
                     <button onClick={reset} className="p-1 hover:bg-sky-100 rounded transition-colors" disabled={status === 'importing'}>
                       <X className="w-4 h-4 text-sky-600" />
                     </button>
+                  </div>
+
+                  {/* Tag assignment */}
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                      <Tag className="w-4 h-4 text-slate-400" /> Asignar etiqueta (opcional)
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={tagInput}
+                        onChange={(e) => { setTagInput(e.target.value); setSelectedTag('') }}
+                        placeholder="Escribe una etiqueta nueva..."
+                        disabled={status === 'importing'}
+                        className="flex-1 px-3.5 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent disabled:opacity-50"
+                      />
+                      {existingTags.length > 0 && (
+                        <select
+                          value={selectedTag}
+                          onChange={(e) => { setSelectedTag(e.target.value); setTagInput('') }}
+                          disabled={status === 'importing'}
+                          className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 bg-white disabled:opacity-50"
+                        >
+                          <option value="">Etiquetas existentes</option>
+                          {existingTags.map((t) => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      )}
+                    </div>
+                    {effectiveTag && (
+                      <p className="text-xs text-sky-600">
+                        Se asignará la etiqueta <strong>"{effectiveTag}"</strong> a todos los contactos importados
+                      </p>
+                    )}
                   </div>
 
                   <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
