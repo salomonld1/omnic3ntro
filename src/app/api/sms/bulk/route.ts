@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { resolveCredentials, resolveAppId } from '@/lib/infobip'
 import { checkBilling, recordDebit } from '@/lib/billing'
+import { prisma } from '@/lib/prisma'
 
 type ContactPayload = { to: string; message?: string; name?: string }
 
@@ -75,7 +76,17 @@ export async function POST(req: NextRequest) {
       bulkId = data.bulkId
     }
 
-    await recordDebit(session.userId, recipients.length)
+    const now = new Date()
+    await Promise.all([
+      recordDebit(session.userId, recipients.length),
+      prisma.message.createMany({
+        data: recipients.map((c) => ({
+          to: c.to, from: from ?? null, content: c.message ?? message,
+          channel: 'sms', status: 'pending', bulkId: bulkId ?? null,
+          userId: session.userId, sentAt: now,
+        })),
+      }),
+    ])
     const warning = 'warning' in billing ? billing.warning : undefined
     return NextResponse.json({ success: true, bulkId, total: recipients.length, warning })
   } catch (err) {

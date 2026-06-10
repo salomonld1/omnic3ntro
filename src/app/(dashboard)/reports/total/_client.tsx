@@ -30,7 +30,7 @@ export function ReportTotalClient({ viewerRole, resellers, clients }: {
   resellers: Option[]
   clients: Option[]
 }) {
-  const [filters, setFilters] = useState({ period: 'month', from: '', to: '', channel: '', resellerId: '', userId: '' })
+  const [filters, setFilters] = useState({ period: 'week', from: '', to: '', channel: '', resellerId: '', userId: '' })
   const [rows, setRows] = useState<ReportRow[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -51,6 +51,10 @@ export function ReportTotalClient({ viewerRole, resellers, clients }: {
 
   function exportCsv() {
     window.open(`/api/reports/total?${buildParams({ format: 'csv' })}`)
+  }
+
+  function exportXlsx() {
+    window.open(`/api/reports/total?${buildParams({ format: 'xlsx' })}`)
   }
 
   const totalMsgs = rows.reduce((s, r) => s + r.total, 0)
@@ -146,7 +150,10 @@ export function ReportTotalClient({ viewerRole, resellers, clients }: {
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Actualizar
             </button>
             <button onClick={exportCsv} className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-sky-600 border border-sky-200 rounded-lg hover:bg-sky-50 transition-colors">
-              <Download className="w-3.5 h-3.5" /> Exportar CSV
+              <Download className="w-3.5 h-3.5" /> CSV
+            </button>
+            <button onClick={exportXlsx} className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-emerald-600 border border-emerald-200 rounded-lg hover:bg-emerald-50 transition-colors">
+              <Download className="w-3.5 h-3.5" /> Excel
             </button>
           </div>
         </div>

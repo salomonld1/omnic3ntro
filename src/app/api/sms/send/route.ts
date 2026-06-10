@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { sendSms, resolveAppId } from '@/lib/infobip'
 import { checkBilling, recordDebit } from '@/lib/billing'
+import { prisma } from '@/lib/prisma'
 
 export async function POST(req: NextRequest) {
   const session = await getSession()
@@ -17,7 +18,12 @@ export async function POST(req: NextRequest) {
     const appId = await resolveAppId(session.userId)
     const result = await sendSms(session.userId, { to, from, text: message, appId })
     const messageId = (result as { messages?: Array<{ messageId?: string }> })?.messages?.[0]?.messageId
-    await recordDebit(session.userId, 1)
+    await Promise.all([
+      recordDebit(session.userId, 1),
+      prisma.message.create({
+        data: { to, from: from ?? null, content: message, channel: 'sms', status: 'pending', messageId: messageId ?? null, userId: session.userId, sentAt: new Date() },
+      }),
+    ])
     const warning = 'warning' in billing ? billing.warning : undefined
     return NextResponse.json({ success: true, messageId, warning })
   } catch (err) {

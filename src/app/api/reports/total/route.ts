@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { fetchLogsForAppIds, resolveReportAppIds } from '@/lib/infobip'
+import * as XLSX from 'xlsx'
 
 function periodDates(period: string, from?: string, to?: string) {
   const now = new Date()
@@ -64,6 +65,7 @@ export async function GET(req: NextRequest) {
   }
 
   const fmt = searchParams.get('format')
+
   if (fmt === 'csv') {
     const headers = ['Usuario', 'SMS', 'WhatsApp', 'RCS', 'Total', 'Entregados', 'Fallidos', 'Costo Total']
     const lines = [
@@ -79,6 +81,27 @@ export async function GET(req: NextRequest) {
       headers: {
         'Content-Type': 'text/csv',
         'Content-Disposition': 'attachment; filename="reporte-resumen.csv"',
+      },
+    })
+  }
+
+  if (fmt === 'xlsx') {
+    const headers = ['Usuario', 'SMS', 'WhatsApp', 'RCS', 'Total', 'Entregados', 'Fallidos', 'Costo Total']
+    const rows = [[
+      row.name,
+      row.bySms, row.byWa, row.byRcs, row.total,
+      row.delivered, row.failed,
+      row.cost ?? '',
+    ]]
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
+    ws['!cols'] = [{ wch: 24 }, { wch: 8 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 12 }, { wch: 10 }, { wch: 14 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Resumen')
+    const buf: Buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
+    return new NextResponse(buf, {
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': 'attachment; filename="reporte-resumen.xlsx"',
       },
     })
   }

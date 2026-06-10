@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { Key, RefreshCw, CreditCard, Plus, RotateCcw } from 'lucide-react'
+import { Key, RefreshCw, CreditCard, Plus, RotateCcw, Lock, History } from 'lucide-react'
+import Link from 'next/link'
 
 type User = {
   id: string
@@ -36,10 +37,10 @@ export function EditUserForm({
   const [profile, setProfile] = useState({
     name: user.name,
     email: user.email,
-    password: '',
     role: user.role,
     parentId: user.parentId ?? '',
   })
+  const [pwd, setPwd] = useState('')
   const [infobip, setInfobip] = useState({
     apiKey: user.infobipApiKey ?? '',
     baseUrl: user.infobipBaseUrl ?? '',
@@ -55,6 +56,7 @@ export function EditUserForm({
   })
   const [topupAmount, setTopupAmount] = useState('')
   const [topupExpiry, setTopupExpiry] = useState('')
+  const [topupNote, setTopupNote] = useState('')
   const [newLimit, setNewLimit] = useState('')
   const [newAlert, setNewAlert] = useState(user.alertAmount?.toString() ?? '')
   const [saved, setSaved] = useState<string | null>(null)
@@ -85,14 +87,19 @@ export function EditUserForm({
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault()
-    const data: Record<string, unknown> = {
+    await patch({
       name: profile.name,
       email: profile.email,
       role: profile.role,
       parentId: profile.parentId || null,
-    }
-    if (profile.password) data.password = profile.password
-    await patch(data, 'profile')
+    }, 'profile')
+  }
+
+  async function savePassword(e: React.FormEvent) {
+    e.preventDefault()
+    if (!pwd) return
+    await patch({ password: pwd }, 'password')
+    setPwd('')
   }
 
   async function saveInfobip(e: React.FormEvent) {
@@ -135,7 +142,8 @@ export function EditUserForm({
 
   async function handleTopup(e: React.FormEvent) {
     e.preventDefault()
-    await billingPost({ type: 'topup', amount: topupAmount, expiresAt: topupExpiry || undefined }, 'topup')
+    await billingPost({ type: 'topup', amount: topupAmount, note: topupNote.trim(), expiresAt: topupExpiry || undefined }, 'topup')
+    setTopupNote('')
   }
 
   async function handleSetLimit(e: React.FormEvent) {
@@ -212,16 +220,6 @@ export function EditUserForm({
               )}
             </div>
           )}
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              Nueva contraseña <span className="text-slate-400 font-normal">(opcional)</span>
-            </label>
-            <input type="password" value={profile.password}
-              onChange={(e) => setProfile({ ...profile, password: e.target.value })}
-              placeholder="Dejar vacío para no cambiar"
-              className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent" />
-          </div>
 
           {error && <div className="bg-rose-50 text-rose-600 text-sm px-3.5 py-2.5 rounded-lg border border-rose-200">{error}</div>}
 
@@ -397,8 +395,15 @@ export function EditUserForm({
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
                 </div>
                 <p className="text-xs text-slate-400">Monto (MXN) · Vigencia (opcional, sobreescribe la anterior)</p>
+                <input
+                  type="text"
+                  required
+                  value={topupNote}
+                  onChange={(e) => setTopupNote(e.target.value)}
+                  placeholder="Nota — ej: Pago factura #123"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
                 <div className="flex items-center gap-3">
-                  <button type="submit" disabled={loading === 'topup'}
+                  <button type="submit" disabled={loading === 'topup' || !topupNote.trim()}
                     className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors">
                     <Plus className="w-4 h-4" /> {loading === 'topup' ? 'Guardando...' : 'Recargar'}
                   </button>
@@ -516,6 +521,52 @@ export function EditUserForm({
           <p className="text-xs text-amber-600 mt-2">⚠ Copia esta key ahora. No se puede recuperar después de regenerarla.</p>
         )}
       </div>
+
+      {/* Contraseña */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <div className="flex items-center gap-2 mb-1">
+          <Lock className="w-4 h-4 text-slate-500" />
+          <h2 className="font-semibold text-slate-800">Contraseña</h2>
+        </div>
+        <p className="text-sm text-slate-500 mb-5">Escribe una nueva contraseña para reemplazar la actual.</p>
+        <form onSubmit={savePassword} className="space-y-4">
+          <div className="max-w-sm">
+            <input
+              type="password"
+              value={pwd}
+              onChange={(e) => setPwd(e.target.value)}
+              placeholder="Nueva contraseña"
+              minLength={6}
+              required
+              className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <button type="submit" disabled={loading === 'password' || !pwd}
+              className="px-4 py-2 bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors">
+              {loading === 'password' ? 'Guardando...' : 'Cambiar contraseña'}
+            </button>
+            {saved === 'password' && <span className="text-sm text-emerald-600">✓ Contraseña actualizada</span>}
+          </div>
+        </form>
+      </div>
+
+      {/* Historial de transacciones — para clientes y resellers */}
+      {(user.role === 'client' || user.role === 'reseller') && (
+        <Link
+          href={`/users/${user.id}/transactions`}
+          className="flex items-center gap-3 bg-white rounded-xl border border-slate-200 p-5 hover:border-sky-300 hover:bg-sky-50 transition-colors group"
+        >
+          <div className="p-2.5 bg-slate-100 rounded-lg group-hover:bg-sky-100 transition-colors">
+            <History className="w-5 h-5 text-slate-500 group-hover:text-sky-600 transition-colors" />
+          </div>
+          <div className="flex-1">
+            <p className="font-medium text-slate-800">Historial de transacciones</p>
+            <p className="text-sm text-slate-400">Ver recargas y débitos de este cliente</p>
+          </div>
+          <span className="text-slate-300 group-hover:text-sky-400 text-lg">→</span>
+        </Link>
+      )}
 
       <div className="flex justify-end">
         <a href="/users" className="text-sm text-slate-500 hover:text-slate-700">← Volver a la lista</a>

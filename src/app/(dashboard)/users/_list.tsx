@@ -5,7 +5,7 @@ import Link from 'next/link'
 import {
   UserPlus, Pencil, Trash2, Key, CheckCircle, XCircle,
   Shield, User, Users, LogIn, CreditCard, X, Plus, RotateCcw, Building2,
-  ChevronsUpDown, ChevronUp, ChevronDown,
+  ChevronsUpDown, ChevronUp, ChevronDown, History,
 } from 'lucide-react'
 
 type UserRow = {
@@ -56,6 +56,7 @@ function BillingModal({ user, onClose, onUpdate }: {
   const [billingType, setBillingType] = useState(user.billingType ?? '')
   const [topupAmount, setTopupAmount] = useState('')
   const [topupExpiry, setTopupExpiry] = useState('')
+  const [topupNote, setTopupNote] = useState('')
   const [newLimit, setNewLimit] = useState(user.creditLimit?.toString() ?? '')
   const [newAlert, setNewAlert] = useState(user.alertAmount?.toString() ?? '')
   const [loading, setLoading] = useState<string | null>(null)
@@ -89,6 +90,7 @@ function BillingModal({ user, onClose, onUpdate }: {
       setNewLimit(u.creditLimit?.toString() ?? '')
       setTopupAmount('')
       setTopupExpiry('')
+      setTopupNote('')
     } finally {
       setLoading(null)
     }
@@ -171,9 +173,15 @@ function BillingModal({ user, onClose, onUpdate }: {
                     onChange={(e) => setTopupExpiry(e.target.value)}
                     className="w-full px-2.5 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
                 </div>
+                <input
+                  type="text"
+                  value={topupNote}
+                  onChange={(e) => setTopupNote(e.target.value)}
+                  placeholder="Nota (requerido) — ej: Pago factura #123"
+                  className="w-full px-2.5 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
                 <button
-                  onClick={() => topupAmount && post({ type: 'topup', amount: topupAmount, expiresAt: topupExpiry || undefined }, 'topup')}
-                  disabled={loading === 'topup' || !topupAmount}
+                  onClick={() => topupAmount && topupNote.trim() && post({ type: 'topup', amount: topupAmount, note: topupNote.trim(), expiresAt: topupExpiry || undefined }, 'topup')}
+                  disabled={loading === 'topup' || !topupAmount || !topupNote.trim()}
                   className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors">
                   {loading === 'topup' ? 'Guardando...' : saved === 'topup' ? '✓ Recargado' : 'Recargar saldo'}
                 </button>
@@ -415,7 +423,8 @@ export function UserList({
               : 'Ningún resultado para esa búsqueda.'}
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
                 {(
@@ -587,6 +596,15 @@ export function UserList({
                             <LogIn className="w-4 h-4" />
                           </button>
                         )}
+                        {(u.role === 'client' || u.role === 'reseller') && (
+                          <Link
+                            href={`/users/${u.id}/transactions`}
+                            className="p-1.5 rounded-md text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors"
+                            title="Historial de transacciones"
+                          >
+                            <History className="w-4 h-4" />
+                          </Link>
+                        )}
                         {showBillingBtn(u) && (
                           <button
                             onClick={() => setBillingUser(u)}
@@ -624,6 +642,7 @@ export function UserList({
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

@@ -24,7 +24,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!user) return NextResponse.json({ error: 'Usuario no encontrado' }, { status: 404 })
 
   const body = await request.json()
-  const { type, amount, expiresAt, creditLimit, billingType, alertAmount } = body
+  const { type, amount, expiresAt, creditLimit, billingType, alertAmount, note } = body
 
   // Change billing type
   if (billingType !== undefined) {
@@ -44,6 +44,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (type === 'topup') {
     const amt = parseFloat(amount)
     if (isNaN(amt) || amt <= 0) return NextResponse.json({ error: 'Monto inválido' }, { status: 400 })
+    if (!note || !String(note).trim()) return NextResponse.json({ error: 'La nota es requerida' }, { status: 400 })
     const expiry = expiresAt ? new Date(expiresAt) : null
 
     await prisma.$transaction([
@@ -55,7 +56,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         },
       }),
       prisma.balanceTransaction.create({
-        data: { userId: id, amount: amt, type: 'topup', expiresAt: expiry, createdById: session.userId },
+        data: { userId: id, amount: amt, type: 'topup', note: String(note).trim(), expiresAt: expiry, createdById: session.userId },
       }),
     ])
     return NextResponse.json({ success: true })
