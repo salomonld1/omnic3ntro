@@ -45,7 +45,7 @@ export function NewUserForm({
   const isAccount  = viewerRole === 'account' || viewerRole === 'client'
   const showBilling        = (isAdmin || isReseller) && form.role === 'account'
                           || isAdmin && form.role === 'reseller'
-  const showPricing        = isAdmin && form.role === 'account' && !form.parentId
+  const showPricing        = (isAdmin || isReseller) && form.role === 'account'
   const showBalanceManager = isAdmin && form.role === 'reseller'
 
   function p(v: string) { return v === '' ? undefined : parseFloat(v) }

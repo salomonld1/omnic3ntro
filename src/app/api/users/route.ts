@@ -111,7 +111,7 @@ export async function POST(request: Request) {
     if (billingType === 'prepaid' || billingType === 'postpaid') data.balance = 0
     if (balanceManager) data.balanceManager = balanceManager
   }
-  if (isAdmin && resolvedRole === 'account' && pricing) {
+  if ((isAdmin || isReseller) && resolvedRole === 'account' && pricing) {
     data.pricing = pricing
   }
 
