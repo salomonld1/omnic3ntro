@@ -89,19 +89,6 @@ export async function POST(request: Request) {
 
   const newRole = resolvedRole
 
-  // Auto-generate unique 5-digit ID for clients and resellers
-  let resolvedAppId = infobipAppId || null
-  if (!resolvedAppId && (newRole === 'client' || newRole === 'reseller')) {
-    let candidate: string
-    let attempts = 0
-    do {
-      candidate = String(Math.floor(10000 + Math.random() * 90000))
-      const exists = await prisma.user.findFirst({ where: { infobipAppId: candidate } })
-      if (!exists) { resolvedAppId = candidate; break }
-      attempts++
-    } while (attempts < 20)
-  }
-
   const user = await prisma.user.create({
     data: {
       name,
@@ -109,7 +96,7 @@ export async function POST(request: Request) {
       password: await bcrypt.hash(password, 10),
       role: newRole,
       parentId: assignedParentId,
-      ...(resolvedAppId ? { infobipAppId: resolvedAppId } : {}),
+      ...(infobipAppId ? { infobipAppId } : {}),
     },
     select: { id: true, name: true, email: true, role: true, parentId: true, createdAt: true },
   })

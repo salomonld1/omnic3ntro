@@ -177,7 +177,26 @@ export function NewUserForm({
         </>
       )}
 
-      {/* App ID se genera automáticamente al crear cliente/reseller */}
+      {/* Application ID — visible para client y reseller */}
+      {(form.role === 'client' || form.role === 'reseller') && (
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            App ID <span className="text-slate-400 font-normal">(5 dígitos)</span>
+          </label>
+          <input
+            type="text"
+            value={form.infobipAppId}
+            onChange={(e) => setForm({ ...form, infobipAppId: e.target.value.replace(/\D/g, '').slice(0, 5) })}
+            placeholder="Ej: 12345"
+            inputMode="numeric"
+            minLength={5}
+            maxLength={5}
+            pattern="[0-9]{5}"
+            required
+            className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent font-mono"
+          />
+        </div>
+      )}
 
       <div className="flex items-center gap-3 pt-2">
         <button
