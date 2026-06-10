@@ -24,6 +24,7 @@ export function NewUserForm({
     password: '',
     role: defaultRole,
     parentId: '',
+    infobipAppId: '',
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -41,6 +42,7 @@ export function NewUserForm({
         role: form.role,
       }
       if (form.parentId) payload.parentId = form.parentId
+      if (form.infobipAppId) payload.infobipAppId = form.infobipAppId
 
       const res = await fetch('/api/users', {
         method: 'POST',
@@ -173,6 +175,23 @@ export function NewUserForm({
             </div>
           )}
         </>
+      )}
+
+      {/* Application ID — solo para client y reseller */}
+      {(form.role === 'client' || form.role === 'reseller') && (
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            Application ID <span className="text-slate-400 font-normal">(Infobip, opcional)</span>
+          </label>
+          <input
+            type="text"
+            value={form.infobipAppId}
+            onChange={(e) => setForm({ ...form, infobipAppId: e.target.value })}
+            placeholder="Ej: A1B2C3D4"
+            className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent font-mono"
+          />
+          <p className="text-xs text-slate-400 mt-1">ID de la Application en Infobip. Se puede agregar después desde la edición del usuario.</p>
+        </div>
       )}
 
       <div className="flex items-center gap-3 pt-2">

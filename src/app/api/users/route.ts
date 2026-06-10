@@ -53,7 +53,7 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json()
-  const { name, email, password, role, parentId } = body
+  const { name, email, password, role, parentId, infobipAppId } = body
 
   if (!name || !email || !password) {
     return NextResponse.json({ error: 'Nombre, email y contraseña son requeridos' }, { status: 400 })
@@ -96,6 +96,7 @@ export async function POST(request: Request) {
       password: await bcrypt.hash(password, 10),
       role: newRole,
       parentId: assignedParentId,
+      ...(infobipAppId ? { infobipAppId } : {}),
     },
     select: { id: true, name: true, email: true, role: true, parentId: true, createdAt: true },
   })
