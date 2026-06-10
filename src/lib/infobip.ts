@@ -57,16 +57,15 @@ export async function resolveReportAppIds(userId: string, role: string): Promise
         children: { select: { infobipAppId: true } },
       },
     })
-    const ids = [
+    return [
       reseller?.infobipAppId,
       ...(reseller?.children.map((c) => c.infobipAppId) ?? []),
     ].filter(Boolean) as string[]
-    return ids.length > 0 ? ids : null
   }
 
   if (role === 'client') {
     const client = await prisma.user.findUnique({ where: { id: userId }, select: { infobipAppId: true } })
-    return client?.infobipAppId ? [client.infobipAppId] : null
+    return client?.infobipAppId ? [client.infobipAppId] : []
   }
 
   // user — usa el appId de su padre (cliente o reseller)
@@ -74,7 +73,7 @@ export async function resolveReportAppIds(userId: string, role: string): Promise
     where: { id: userId },
     select: { parent: { select: { infobipAppId: true } } },
   })
-  return user?.parent?.infobipAppId ? [user.parent.infobipAppId] : null
+  return user?.parent?.infobipAppId ? [user.parent.infobipAppId] : []
 }
 
 export function getGlobalCredentials() {

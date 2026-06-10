@@ -32,15 +32,33 @@ export async function GET(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
   const { searchParams } = req.nextUrl
-  const period  = searchParams.get('period') ?? 'month'
-  const from    = searchParams.get('from') ?? undefined
-  const to      = searchParams.get('to') ?? undefined
-  const channel = searchParams.get('channel') ?? undefined
-  const page    = parseInt(searchParams.get('page') ?? '1')
-  const limit   = 50
+  const period       = searchParams.get('period') ?? 'month'
+  const from         = searchParams.get('from') ?? undefined
+  const to           = searchParams.get('to') ?? undefined
+  const channel      = searchParams.get('channel') ?? undefined
+  const resellerId   = searchParams.get('resellerId') ?? undefined
+  const filterUserId = searchParams.get('userId') ?? undefined
+  const page         = parseInt(searchParams.get('page') ?? '1')
+  const limit        = 50
 
   const dates = periodDates(period, from, to)
-  const appIds = await resolveReportAppIds(session.userId, session.role)
+
+  // Calcular appIds base según el rol
+  let appIds = await resolveReportAppIds(session.userId, session.role)
+
+  // Aplicar filtro de cliente específico
+  if (filterUserId) {
+    const u = await prisma.user.findUnique({ where: { id: filterUserId }, select: { infobipAppId: true } })
+    appIds = u?.infobipAppId ? [u.infobipAppId] : []
+  } else if (resellerId && session.role === 'admin') {
+    // Filtrar por reseller: su appId + los de sus clientes directos
+    const r = await prisma.user.findUnique({
+      where: { id: resellerId },
+      select: { infobipAppId: true, children: { select: { infobipAppId: true } } },
+    })
+    appIds = [r?.infobipAppId, ...(r?.children.map(c => c.infobipAppId) ?? [])].filter(Boolean) as string[]
+  }
+
   const [all, usersWithApp, sessionUser] = await Promise.all([
     fetchLogsForAppIds(appIds, dates, channel),
     prisma.user.findMany({ where: { infobipAppId: { not: null } }, select: { infobipAppId: true, name: true } }),
