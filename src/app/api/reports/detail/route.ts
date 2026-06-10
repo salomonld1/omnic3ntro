@@ -54,10 +54,16 @@ export async function GET(req: NextRequest) {
 
   // Enrich with a generic user label (platform-level — all messages from one account)
   const result = paginated.map((m) => ({
-    ...m,
+    id: m.messageId,
+    to: m.to,
+    content: m.text,
+    channel: m.channel,
     status: m.statusGroup.toLowerCase(),
-    userName: 'Plataforma',
     cost: m.pricePerMessage,
+    createdAt: m.sentAt,
+    sentAt: m.sentAt,
+    user: { id: 'platform', name: 'Plataforma' },
+    campaign: null,
   }))
 
   const fmt = searchParams.get('format')
