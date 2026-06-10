@@ -48,13 +48,12 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
     redirect('/users')
   }
 
-  const resellers = session.role === 'admin'
-    ? await prisma.user.findMany({
-        where: { role: 'reseller', NOT: { id } },
-        select: { id: true, name: true },
-        orderBy: { name: 'asc' },
-      })
-    : []
+  const [resellers, clients] = session.role === 'admin'
+    ? await Promise.all([
+        prisma.user.findMany({ where: { role: 'reseller', NOT: { id } }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+        prisma.user.findMany({ where: { role: 'client',   NOT: { id } }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+      ])
+    : [[], []]
 
   const backLabel =
     session.role === 'reseller' ? 'Volver a Mis Clientes' :
@@ -73,6 +72,7 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
           user={{ ...user, balanceExpiresAt: user.balanceExpiresAt?.toISOString() ?? null }}
           viewerRole={session.role}
           resellers={resellers}
+          clients={clients}
         />
       </main>
     </div>
