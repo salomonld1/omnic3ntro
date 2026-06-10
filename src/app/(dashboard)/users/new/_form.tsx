@@ -177,27 +177,7 @@ export function NewUserForm({
         </>
       )}
 
-      {/* Application ID — visible para todos los roles excepto admin */}
-      {form.role !== 'admin' && (
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1.5">
-            Application ID <span className="text-slate-400 font-normal">(Infobip, opcional)</span>
-          </label>
-          <input
-            type="text"
-            value={form.infobipAppId}
-            onChange={(e) => setForm({ ...form, infobipAppId: e.target.value.replace(/\D/g, '').slice(0, 5) })}
-            placeholder="Ej: 12345"
-            inputMode="numeric"
-            minLength={5}
-            maxLength={5}
-            pattern="[0-9]{5}"
-            required={form.role === 'client' || form.role === 'reseller'}
-            className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent font-mono"
-          />
-          <p className="text-xs text-slate-400 mt-1">ID de la Application creada en el portal de Infobip para filtrar reportes por cliente.</p>
-        </div>
-      )}
+      {/* App ID se genera automáticamente al crear cliente/reseller */}
 
       <div className="flex items-center gap-3 pt-2">
         <button
