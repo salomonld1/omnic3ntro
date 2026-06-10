@@ -12,7 +12,7 @@ type User = {
   apiKey: string | null
   infobipApiKey: string | null
   infobipBaseUrl: string | null
-  pricePerMessage: number | null
+  pricing: string | null
   billingType: string | null
   balance: number | null
   balanceExpiresAt: string | null
@@ -43,7 +43,7 @@ export function EditUserForm({
     baseUrl: user.infobipBaseUrl ?? '',
   })
   const [apiKey, setApiKey] = useState(user.apiKey)
-  const [price, setPrice] = useState(user.pricePerMessage?.toString() ?? '')
+  const [price, setPrice] = useState('')
   const [billing, setBilling] = useState({
     billingType: user.billingType ?? '',
     balance: user.balance ?? 0,
@@ -282,7 +282,7 @@ export function EditUserForm({
               ? 'Precio que le cobras a este cliente por cada mensaje enviado.'
               : 'Precio que se le cobra a este cliente por cada mensaje enviado.'}
           </p>
-          <form onSubmit={async (e) => { e.preventDefault(); await patch({ pricePerMessage: price ? parseFloat(price) : null }, 'price') }} className="space-y-4">
+          <form onSubmit={async (e) => { e.preventDefault(); await patch({ pricing: price || null }, 'price') }} className="space-y-4">
             <div className="flex items-center gap-3 max-w-xs">
               <div className="relative flex-1">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>

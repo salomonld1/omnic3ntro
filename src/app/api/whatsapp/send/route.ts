@@ -11,13 +11,13 @@ export async function POST(req: NextRequest) {
   const billing = await checkBilling(session.userId)
   if (!billing.canSend) return NextResponse.json({ error: billing.error }, { status: 402 })
 
-  const { to, from, message, type } = await req.json()
+  const { to, from, message, type, category } = await req.json()
   if (!to || !from || !message) {
     return NextResponse.json({ error: 'to, from y message son requeridos' }, { status: 400 })
   }
 
   const msg = await prisma.message.create({
-    data: { to, from, content: message, channel: 'whatsapp', status: 'pending', userId: session.userId },
+    data: { to, from, content: message, channel: 'whatsapp', category: category ?? 'marketing', status: 'pending', userId: session.userId },
   })
 
   try {
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       where: { id: msg.id },
       data: { status: 'sent', messageId: messageId ?? null, sentAt: new Date() },
     })
-    await recordDebit(session.userId, 1)
+    await recordDebit(session.userId, 1, 'whatsapp', category ?? 'marketing')
     const warning = 'warning' in billing ? billing.warning : undefined
     return NextResponse.json({ success: true, messageId: messageId ?? msg.id, warning })
   } catch (err) {

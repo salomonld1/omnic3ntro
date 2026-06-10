@@ -3,10 +3,27 @@ import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 async function canManage(session: { userId: string; role: string }, targetId: string) {
-  if (session.role === 'admin') return true
+  if (session.role === 'superadmin' || session.role === 'admin') {
+    // admin can manage direct clients and reseller-clients unless balanceManager restricts it
+    const target = await prisma.user.findUnique({
+      where: { id: targetId },
+      select: { parentId: true, parent: { select: { balanceManager: true } } },
+    })
+    const bm = target?.parent?.balanceManager
+    if (bm === 'reseller') return false // reseller-exclusive
+    return true
+  }
   if (session.role === 'reseller') {
-    const target = await prisma.user.findUnique({ where: { id: targetId }, select: { parentId: true } })
-    return target?.parentId === session.userId
+    const target = await prisma.user.findUnique({
+      where: { id: targetId },
+      select: { parentId: true },
+    })
+    if (target?.parentId !== session.userId) return false
+    // check if this reseller is allowed to manage balance
+    const self = await prisma.user.findUnique({ where: { id: session.userId }, select: { balanceManager: true } })
+    const bm = self?.balanceManager
+    if (bm === 'admin') return false // admin-exclusive
+    return true
   }
   return false
 }

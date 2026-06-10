@@ -25,7 +25,7 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
       apiKey: true,
       infobipApiKey: true,
       infobipBaseUrl: true,
-      pricePerMessage: true,
+      pricing: true,
       billingType: true,
       balance: true,
       balanceExpiresAt: true,

@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
         cost: true,
         createdAt: true,
         sentAt: true,
-        user: { select: { id: true, name: true, pricePerMessage: true, parent: { select: { pricePerMessage: true } } } },
+        user: { select: { id: true, name: true, pricing: true, parent: { select: { pricing: true } } } },
         campaign: { select: { name: true } },
       },
     }),
@@ -101,11 +101,7 @@ export async function GET(req: NextRequest) {
   const sessionRole = session!.role
   function effectivePrice(m: typeof messages[0]) {
     if (m.cost != null) return m.cost
-    const isAdminViewingResellerClient = sessionRole === 'admin' && m.user.parent != null
-    const price = isAdminViewingResellerClient
-      ? m.user.parent!.pricePerMessage
-      : m.user.pricePerMessage
-    return price ?? null
+    return null
   }
 
   const fmt = searchParams.get('format')

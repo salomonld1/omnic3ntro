@@ -1,6 +1,25 @@
 import { prisma } from './prisma'
 
+export type PricingMap = {
+  sms?: { marketing?: number; transaccional?: number }
+  whatsapp?: { marketing?: number; otp?: number; notificacion?: number }
+  rcs?: { simple?: number; basic?: number; conversacional?: number }
+}
+
 export type BillingCheck = { canSend: true; warning?: string } | { canSend: false; error: string }
+
+export function parsePricing(raw: string | null | undefined): PricingMap {
+  if (!raw) return {}
+  try { return JSON.parse(raw) } catch { return {} }
+}
+
+export function getRate(pricing: PricingMap, channel: string, category?: string | null): number {
+  const ch = (pricing as Record<string, Record<string, number>>)[channel]
+  if (!ch) return 0
+  if (category && ch[category] != null) return ch[category]
+  const first = Object.values(ch)[0]
+  return first ?? 0
+}
 
 export async function checkBilling(userId: string): Promise<BillingCheck> {
   const user = await prisma.user.findUnique({
@@ -13,11 +32,9 @@ export async function checkBilling(userId: string): Promise<BillingCheck> {
   })
   if (!user) return { canSend: true }
 
-  // For role='user', billing is managed at the client (parent) level
   const billing = (user.role === 'user' && user.parent?.billingType) ? user.parent : user
   if (!billing.billingType) return { canSend: true }
 
-  // "has reseller backing" — there's a parent tier that can absorb overages
   const hasResellerParent = user.role === 'user'
     ? (user.parent?.parentId != null)
     : (user.parentId != null)
@@ -42,26 +59,35 @@ export async function checkBilling(userId: string): Promise<BillingCheck> {
   return { canSend: true }
 }
 
-export async function recordDebit(userId: string, messageCount: number) {
+export async function recordDebit(
+  userId: string,
+  messageCount: number,
+  channel: string,
+  category?: string | null,
+) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
       role: true,
-      billingType: true, pricePerMessage: true, parentId: true,
-      parent: { select: { billingType: true, pricePerMessage: true } },
+      billingType: true, pricing: true, parentId: true,
+      parent: { select: { billingType: true, pricing: true } },
     },
   })
   if (!user) return
 
-  // For role='user', debit from parent client's balance
   const useParent = user.role === 'user' && !!user.parent?.billingType && !!user.parentId
   const billingUserId = useParent ? user.parentId! : userId
-  const billingType   = useParent ? user.parent!.billingType    : user.billingType
-  const price         = useParent ? user.parent!.pricePerMessage : user.pricePerMessage
+  const billingType   = useParent ? user.parent!.billingType : user.billingType
+  const rawPricing    = useParent ? user.parent!.pricing : user.pricing
 
-  if (!billingType || !price || price <= 0) return
+  if (!billingType) return
 
-  const cost = messageCount * price
+  const pricing = parsePricing(rawPricing)
+  const rate = getRate(pricing, channel, category)
+  if (rate <= 0) return
+
+  const cost = messageCount * rate
+
   await prisma.$transaction([
     prisma.user.update({
       where: { id: billingUserId },
@@ -70,7 +96,12 @@ export async function recordDebit(userId: string, messageCount: number) {
         : { balance: { increment: cost } },
     }),
     prisma.balanceTransaction.create({
-      data: { userId: billingUserId, amount: -cost, type: 'debit', note: `${messageCount} mensaje(s)` },
+      data: {
+        userId: billingUserId,
+        amount: -cost,
+        type: 'debit',
+        note: `${messageCount} msg · ${channel}/${category ?? 'default'} · $${rate}/msg`,
+      },
     }),
   ])
 }

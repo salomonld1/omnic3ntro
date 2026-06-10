@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   if (!billing.canSend) return NextResponse.json({ error: billing.error }, { status: 402 })
 
   const body = await req.json()
-  const { name, from, message } = body
+  const { name, from, message, category } = body
   const contacts: ContactPayload[] = body.contacts ?? []
   const numbers: string[] = body.numbers ?? []
 
@@ -46,6 +46,7 @@ export async function POST(req: NextRequest) {
       from: from || null,
       content: c.message || message,
       channel: 'whatsapp',
+      category: category ?? 'marketing',
       status: 'pending',
       campaignId: campaign.id,
       userId: session.userId,
@@ -81,7 +82,7 @@ export async function POST(req: NextRequest) {
       data: { status: 'sent', sentAt: new Date() },
     })
 
-    await recordDebit(session.userId, recipients.length)
+    await recordDebit(session.userId, recipients.length, 'whatsapp', category ?? 'marketing')
     const warning = 'warning' in billing ? billing.warning : undefined
     return NextResponse.json({ success: true, campaignId: campaign.id, total: recipients.length, warning })
   } catch (err) {

@@ -79,8 +79,8 @@ export async function GET(req: NextRequest) {
       name: true,
       email: true,
       role: true,
-      pricePerMessage: true,
-      parent: { select: { id: true, name: true, pricePerMessage: true } },
+      pricing: true,
+      parent: { select: { id: true, name: true, pricing: true } },
       messages: {
         where: {
           ...(channel ? { channel } : {}),
@@ -102,14 +102,7 @@ export async function GET(req: NextRequest) {
     const byWa  = msgs.filter((m) => m.channel === 'whatsapp').length
     const byRcs = msgs.filter((m) => m.channel === 'rcs').length
 
-    // Admin sees: reseller's price for their clients (not what reseller charges clients)
-    // Reseller sees: client's own price (what reseller charges them)
-    const isAdminViewingResellerClient = session.role === 'admin' && u.parent != null
-    const effectivePrice = isAdminViewingResellerClient
-      ? u.parent!.pricePerMessage  // use reseller's price for cost, hide individual client price
-      : u.pricePerMessage
-    const visiblePrice = isAdminViewingResellerClient ? null : u.pricePerMessage
-    const cost = effectivePrice != null ? total * effectivePrice : null
+    const cost = null
 
     return {
       id: u.id,
@@ -119,7 +112,6 @@ export async function GET(req: NextRequest) {
       reseller: u.parent?.name ?? null,
       total, sent, delivered, failed,
       bySms, byWa, byRcs,
-      pricePerMessage: visiblePrice,
       cost,
     }
   })
@@ -132,7 +124,7 @@ export async function GET(req: NextRequest) {
       ...rows.map((r) => [
         `"${r.name}"`, `"${r.email}"`, r.role, `"${r.reseller ?? ''}"`,
         r.bySms, r.byWa, r.byRcs, r.total, r.sent, r.delivered, r.failed,
-        r.pricePerMessage ?? '', r.cost?.toFixed(2) ?? '',
+        '',
       ].join(',')),
     ]
     return new NextResponse(lines.join('\n'), {
