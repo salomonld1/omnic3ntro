@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth'
 import { resolveCredentials, resolveAppId } from '@/lib/infobip'
 import { checkBilling, recordDebit } from '@/lib/billing'
 import { prisma } from '@/lib/prisma'
+import { normalizePhone } from '@/lib/phone'
 
 type ContactPayload = { to: string; message?: string; name?: string }
 
@@ -25,10 +26,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Se requiere al menos un destinatario' }, { status: 400 })
   }
 
-  const recipients: ContactPayload[] =
-    contacts.length > 0
-      ? contacts
-      : numbers.map((to) => ({ to, message }))
+  const recipients: ContactPayload[] = (
+    contacts.length > 0 ? contacts : numbers.map((to) => ({ to, message }))
+  ).map((c) => ({ ...c, to: normalizePhone(c.to) }))
 
   try {
     const { apiKey, baseUrl } = await resolveCredentials(session.userId)

@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth'
 import { sendRcs, resolveAppId } from '@/lib/infobip'
 import { checkBilling, recordDebit } from '@/lib/billing'
 import { prisma } from '@/lib/prisma'
+import { normalizePhone } from '@/lib/phone'
 
 export async function POST(req: NextRequest) {
   const session = await getSession()
@@ -11,7 +12,9 @@ export async function POST(req: NextRequest) {
   const billing = await checkBilling(session.userId)
   if (!billing.canSend) return NextResponse.json({ error: billing.error }, { status: 402 })
 
-  const { to, from, message } = await req.json()
+  const body = await req.json()
+  const { from, message } = body
+  const to = normalizePhone(body.to ?? '')
   if (!to || !from || !message) {
     return NextResponse.json({ error: 'to, from y message son requeridos' }, { status: 400 })
   }
