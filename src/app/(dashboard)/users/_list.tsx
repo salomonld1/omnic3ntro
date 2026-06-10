@@ -23,6 +23,7 @@ type UserRow = {
   balance: number | null
   balanceExpiresAt: string | null
   creditLimit: number | null
+  alertAmount: number | null
   _count: { messages: number; campaigns: number; children: number }
 }
 
@@ -55,6 +56,7 @@ function BillingModal({ user, onClose, onUpdate }: {
   const [topupAmount, setTopupAmount] = useState('')
   const [topupExpiry, setTopupExpiry] = useState('')
   const [newLimit, setNewLimit] = useState(user.creditLimit?.toString() ?? '')
+  const [newAlert, setNewAlert] = useState(user.alertAmount?.toString() ?? '')
   const [loading, setLoading] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
   const [error, setError] = useState('')
@@ -219,6 +221,26 @@ function BillingModal({ user, onClose, onUpdate }: {
                     disabled={loading === 'limit' || newLimit === ''}
                     className="px-4 py-2 bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap">
                     {loading === 'limit' ? '...' : saved === 'limit' ? '✓' : 'Guardar'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="border border-slate-200 rounded-xl p-4 space-y-2">
+                <p className="text-xs font-semibold text-slate-600">Alerta de saldo (MXN)</p>
+                <p className="text-xs text-slate-400">Se enviará un email cuando el uso supere este monto.</p>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                    <input type="number" step="0.01" min="0" value={newAlert}
+                      onChange={(e) => setNewAlert(e.target.value)}
+                      placeholder="500.00"
+                      className="w-full pl-6 pr-2 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
+                  </div>
+                  <button
+                    onClick={() => newAlert !== '' && post({ type: 'set_alert', alertAmount: newAlert }, 'alert')}
+                    disabled={loading === 'alert' || newAlert === ''}
+                    className="px-4 py-2 bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap">
+                    {loading === 'alert' ? '...' : saved === 'alert' ? '✓' : 'Guardar'}
                   </button>
                 </div>
               </div>

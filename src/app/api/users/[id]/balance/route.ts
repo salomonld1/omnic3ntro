@@ -24,7 +24,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!user) return NextResponse.json({ error: 'Usuario no encontrado' }, { status: 404 })
 
   const body = await request.json()
-  const { type, amount, expiresAt, creditLimit, billingType } = body
+  const { type, amount, expiresAt, creditLimit, billingType, alertAmount } = body
 
   // Change billing type
   if (billingType !== undefined) {
@@ -71,6 +71,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         data: { userId: id, amount: limit, type: 'limit_set', note: `Límite: $${limit}`, createdById: session.userId },
       }),
     ])
+    return NextResponse.json({ success: true })
+  }
+
+  // Set postpaid alert amount
+  if (type === 'set_alert') {
+    const amt = parseFloat(alertAmount)
+    if (isNaN(amt) || amt < 0) return NextResponse.json({ error: 'Monto inválido' }, { status: 400 })
+    await prisma.user.update({ where: { id }, data: { alertAmount: amt } })
     return NextResponse.json({ success: true })
   }
 

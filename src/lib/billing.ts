@@ -1,4 +1,5 @@
 import { prisma } from './prisma'
+import { sendBalanceAlert } from './email'
 
 export type BillingCheck = { canSend: true; warning?: string } | { canSend: false; error: string }
 
@@ -13,11 +14,9 @@ export async function checkBilling(userId: string): Promise<BillingCheck> {
   })
   if (!user) return { canSend: true }
 
-  // For role='user', billing is managed at the client (parent) level
   const billing = (user.role === 'user' && user.parent?.billingType) ? user.parent : user
   if (!billing.billingType) return { canSend: true }
 
-  // "has reseller backing" — there's a parent tier that can absorb overages
   const hasResellerParent = user.role === 'user'
     ? (user.parent?.parentId != null)
     : (user.parentId != null)
@@ -27,7 +26,6 @@ export async function checkBilling(userId: string): Promise<BillingCheck> {
     const noBalance = billing.balance == null || billing.balance <= 0
     if (expired || noBalance) {
       const reason = expired ? 'Vigencia del saldo vencida' : 'Saldo insuficiente'
-      if (hasResellerParent) return { canSend: true, warning: reason }
       return { canSend: false, error: reason }
     }
   }
@@ -47,13 +45,12 @@ export async function recordDebit(userId: string, messageCount: number) {
     where: { id: userId },
     select: {
       role: true,
-      billingType: true, pricePerMessage: true, parentId: true,
+      billingType: true, pricePerMessage: true, parentId: true, balance: true,
       parent: { select: { billingType: true, pricePerMessage: true } },
     },
   })
   if (!user) return
 
-  // For role='user', debit from parent client's balance
   const useParent = user.role === 'user' && !!user.parent?.billingType && !!user.parentId
   const billingUserId = useParent ? user.parentId! : userId
   const billingType   = useParent ? user.parent!.billingType    : user.billingType
@@ -62,6 +59,8 @@ export async function recordDebit(userId: string, messageCount: number) {
   if (!billingType || !price || price <= 0) return
 
   const cost = messageCount * price
+  const prevBalance = user.balance ?? 0
+
   await prisma.$transaction([
     prisma.user.update({
       where: { id: billingUserId },
@@ -73,4 +72,23 @@ export async function recordDebit(userId: string, messageCount: number) {
       data: { userId: billingUserId, amount: -cost, type: 'debit', note: `${messageCount} mensaje(s)` },
     }),
   ])
+
+  // Postpago: enviar alerta si el balance cruzó el umbral
+  if (billingType === 'postpaid') {
+    const billingUser = await prisma.user.findUnique({
+      where: { id: billingUserId },
+      select: { name: true, email: true, balance: true, alertAmount: true },
+    })
+    if (billingUser?.alertAmount != null) {
+      const newBalance = billingUser.balance ?? 0
+      if (newBalance >= billingUser.alertAmount && prevBalance < billingUser.alertAmount) {
+        await sendBalanceAlert({
+          to: billingUser.email,
+          clientName: billingUser.name,
+          balance: newBalance,
+          alertAmount: billingUser.alertAmount,
+        }).catch(() => {})
+      }
+    }
+  }
 }

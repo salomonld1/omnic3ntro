@@ -31,6 +31,7 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
       balance: true,
       balanceExpiresAt: true,
       creditLimit: true,
+      alertAmount: true,
       parent: { select: { id: true, name: true } },
     },
   })

@@ -18,6 +18,7 @@ type User = {
   balance: number | null
   balanceExpiresAt: string | null
   creditLimit: number | null
+  alertAmount: number | null
   parent: { id: string; name: string } | null
 }
 
@@ -55,6 +56,7 @@ export function EditUserForm({
   const [topupAmount, setTopupAmount] = useState('')
   const [topupExpiry, setTopupExpiry] = useState('')
   const [newLimit, setNewLimit] = useState('')
+  const [newAlert, setNewAlert] = useState(user.alertAmount?.toString() ?? '')
   const [saved, setSaved] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState<string | null>(null)
@@ -450,6 +452,25 @@ export function EditUserForm({
                     {loading === 'setLimit' ? 'Guardando...' : 'Guardar'}
                   </button>
                   {saved === 'setLimit' && <span className="text-sm text-emerald-600">✓</span>}
+                </div>
+              </form>
+
+              <form onSubmit={async (e) => { e.preventDefault(); await billingPost({ type: 'set_alert', alertAmount: newAlert }, 'alert') }} className="border border-slate-200 rounded-lg p-4 space-y-3">
+                <p className="text-sm font-medium text-slate-700">Alerta de saldo</p>
+                <p className="text-xs text-slate-400">Se enviará un email cuando el uso supere este monto.</p>
+                <div className="flex items-center gap-3 max-w-xs">
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                    <input type="number" step="0.01" min="0" required value={newAlert}
+                      onChange={(e) => setNewAlert(e.target.value)}
+                      placeholder="500.00"
+                      className="w-full pl-7 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
+                  </div>
+                  <button type="submit" disabled={loading === 'alert'}
+                    className="px-4 py-2 bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors">
+                    {loading === 'alert' ? 'Guardando...' : 'Guardar'}
+                  </button>
+                  {saved === 'alert' && <span className="text-sm text-emerald-600">✓</span>}
                 </div>
               </form>
 

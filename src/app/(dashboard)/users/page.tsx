@@ -37,6 +37,7 @@ export default async function UsersPage() {
       balance: true,
       balanceExpiresAt: true,
       creditLimit: true,
+      alertAmount: true,
       createdAt: true,
       parent: { select: { id: true, name: true, parentId: true } },
       _count: { select: { messages: true, campaigns: true, children: true } },

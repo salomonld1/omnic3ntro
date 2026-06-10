@@ -39,6 +39,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       balance: true,
       balanceExpiresAt: true,
       creditLimit: true,
+      alertAmount: true,
       createdAt: true,
       parent: { select: { id: true, name: true } },
     },
