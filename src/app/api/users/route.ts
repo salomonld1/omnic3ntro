@@ -86,7 +86,7 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json()
-  const { name, email, password, role, parentId, billingType, pricing, balanceManager } = body
+  const { name, email, password, role, parentId, billingType, pricing, balanceManager, infobipAppId } = body
 
   if (!name || !email || !password) {
     return NextResponse.json({ error: 'Nombre, email y contraseña son requeridos' }, { status: 400 })
@@ -149,6 +149,7 @@ export async function POST(request: Request) {
   if ((isAdmin || isReseller) && resolvedRole === 'account' && pricing) {
     data.pricing = pricing
   }
+  if (infobipAppId) data.infobipAppId = infobipAppId
 
   const user = await prisma.user.create({
     data: data as Parameters<typeof prisma.user.create>[0]['data'],

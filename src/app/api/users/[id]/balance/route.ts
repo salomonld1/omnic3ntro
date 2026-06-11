@@ -41,10 +41,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!user) return NextResponse.json({ error: 'Usuario no encontrado' }, { status: 404 })
 
   const body = await request.json()
-  const { type, amount, expiresAt, creditLimit, billingType } = body
+  const { type, amount, expiresAt, creditLimit, billingType, alertAmount, note } = body
 
-  // Change billing type
+  // Change billing type (only allowed if not yet set)
   if (billingType !== undefined) {
+    if (user.billingType) {
+      return NextResponse.json({ error: 'El tipo de facturación no se puede cambiar una vez asignado' }, { status: 400 })
+    }
     await prisma.user.update({
       where: { id },
       data: {
@@ -61,6 +64,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (type === 'topup') {
     const amt = parseFloat(amount)
     if (isNaN(amt) || amt <= 0) return NextResponse.json({ error: 'Monto inválido' }, { status: 400 })
+    if (!note || !String(note).trim()) return NextResponse.json({ error: 'La nota es requerida' }, { status: 400 })
     const expiry = expiresAt ? new Date(expiresAt) : null
 
     await prisma.$transaction([
@@ -72,7 +76,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         },
       }),
       prisma.balanceTransaction.create({
-        data: { userId: id, amount: amt, type: 'topup', expiresAt: expiry, createdById: session.userId },
+        data: { userId: id, amount: amt, type: 'topup', note: String(note).trim(), expiresAt: expiry, createdById: session.userId },
       }),
     ])
     return NextResponse.json({ success: true })
@@ -88,6 +92,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         data: { userId: id, amount: limit, type: 'limit_set', note: `Límite: $${limit}`, createdById: session.userId },
       }),
     ])
+    return NextResponse.json({ success: true })
+  }
+
+  // Set postpaid alert amount
+  if (type === 'set_alert') {
+    const amt = parseFloat(alertAmount)
+    if (isNaN(amt) || amt < 0) return NextResponse.json({ error: 'Monto inválido' }, { status: 400 })
+    await prisma.user.update({ where: { id }, data: { alertAmount: amt } })
     return NextResponse.json({ success: true })
   }
 

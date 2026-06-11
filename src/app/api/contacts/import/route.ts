@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
-type ImportRow = { name: string; phone: string; email?: string; country?: string }
+type ImportRow = { name: string; phone: string; email?: string; country?: string; tags?: string }
 
 export async function POST(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
-  const { contacts }: { contacts: ImportRow[] } = await req.json()
+  const { contacts, tags: globalTags }: { contacts: ImportRow[]; tags?: string } = await req.json()
   if (!contacts?.length) return NextResponse.json({ error: 'Sin contactos' }, { status: 400 })
 
   // Get existing phones to skip duplicates
@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
       phone: c.phone,
       email: c.email || null,
       country: c.country || null,
+      tags: c.tags || globalTags || null,
       userId: session.userId,
     })),
   })

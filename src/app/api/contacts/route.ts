@@ -7,6 +7,7 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   const contacts = await prisma.contact.findMany({
     where: { userId: session.userId },
+    select: { id: true, name: true, phone: true, email: true, country: true, tags: true, createdAt: true },
     orderBy: { createdAt: 'desc' },
   })
   return NextResponse.json(contacts)

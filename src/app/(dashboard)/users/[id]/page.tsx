@@ -30,11 +30,13 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
       apiKey: true,
       infobipApiKey: true,
       infobipBaseUrl: true,
+      infobipAppId: true,
       pricing: true,
       billingType: true,
       balance: true,
       balanceExpiresAt: true,
       creditLimit: true,
+      alertAmount: true,
       parent: { select: { id: true, name: true } },
     },
   })
@@ -46,13 +48,17 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
     redirect('/users')
   }
 
-  const resellers = ADMIN_ROLES.includes(viewerRole)
-    ? await prisma.user.findMany({
-        where: { role: 'reseller', NOT: { id } },
-        select: { id: true, name: true },
-        orderBy: { name: 'asc' },
-      })
-    : []
+  // Client can only edit their direct users (role='user')
+  if (session.role === 'client' && user.parentId !== session.userId) {
+    redirect('/users')
+  }
+
+  const [resellers, clients] = ADMIN_ROLES.includes(viewerRole)
+    ? await Promise.all([
+        prisma.user.findMany({ where: { role: 'reseller', NOT: { id } }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+        prisma.user.findMany({ where: { role: 'client',   NOT: { id } }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+      ])
+    : [[], []]
 
   const backLabel =
     viewerRole === 'reseller'                               ? 'Volver a Mis Clientes' :
@@ -71,6 +77,7 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
           user={{ ...user, balanceExpiresAt: user.balanceExpiresAt?.toISOString() ?? null }}
           viewerRole={viewerRole}
           resellers={resellers}
+          clients={clients}
         />
       </main>
     </div>

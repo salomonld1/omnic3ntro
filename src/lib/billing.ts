@@ -1,4 +1,5 @@
 import { prisma } from './prisma'
+import { sendBalanceAlert } from './email'
 
 export type PricingMap = {
   sms?: { marketing?: number; transaccional?: number }
@@ -66,7 +67,6 @@ export async function checkBilling(
     const noBalance = billing.balance == null || billing.balance <= 0
     if (expired || noBalance) {
       const reason = expired ? 'Vigencia del saldo vencida' : 'Saldo insuficiente'
-      if (hasResellerParent) return { canSend: true, warning: reason }
       return { canSend: false, error: reason }
     }
   }
@@ -91,7 +91,7 @@ export async function recordDebit(
     where: { id: userId },
     select: {
       role: true,
-      billingType: true, pricing: true, parentId: true,
+      billingType: true, pricing: true, parentId: true, balance: true,
       parent: { select: { billingType: true, pricing: true } },
     },
   })
@@ -109,6 +109,7 @@ export async function recordDebit(
   if (rate <= 0) return
 
   const cost = messageCount * rate
+  const prevBalance = user.balance ?? 0
   const note = `${messageCount} msg · ${channel}/${category ?? 'default'} · $${rate}/msg`
 
   if (billingType === 'prepaid') {
@@ -139,4 +140,23 @@ export async function recordDebit(
       data: { userId: billingUserId, amount: -cost, type: 'debit', note },
     }),
   ])
+
+  // Postpago: enviar alerta si el balance cruzó el umbral
+  if (billingType === 'postpaid') {
+    const billingUser = await prisma.user.findUnique({
+      where: { id: billingUserId },
+      select: { name: true, email: true, balance: true, alertAmount: true },
+    })
+    if (billingUser?.alertAmount != null) {
+      const newBalance = billingUser.balance ?? 0
+      if (newBalance >= billingUser.alertAmount && prevBalance < billingUser.alertAmount) {
+        await sendBalanceAlert({
+          to: billingUser.email,
+          clientName: billingUser.name,
+          balance: newBalance,
+          alertAmount: billingUser.alertAmount,
+        }).catch(() => {})
+      }
+    }
+  }
 }

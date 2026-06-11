@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { FileText, Send, Upload, X, AlertCircle } from 'lucide-react'
+import { FileText, Send, Upload, X, AlertCircle, Download } from 'lucide-react'
 import { parseContactsFile, applyTemplate, type ContactRow } from '@/lib/parse-contacts'
 import { ContactsPicker, type PickedContact } from '@/components/bulk/contacts-picker'
 
@@ -141,6 +141,14 @@ export function BulkWhatsAppForm() {
                 <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
                 <p className="text-sm font-medium text-slate-600">Haz clic para subir CSV o Excel</p>
                 <p className="text-xs text-slate-400 mt-1">Columnas: <strong>telefono</strong> (requerido), nombre, mensaje</p>
+                <a
+                  href="/plantilla-bulk.csv"
+                  download="plantilla-bulk.csv"
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 mt-2 text-xs text-sky-600 hover:underline"
+                >
+                  <Download className="w-3.5 h-3.5" /> Descargar plantilla de ejemplo
+                </a>
                 <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" onChange={handleFile} className="hidden" />
               </div>
             ) : (

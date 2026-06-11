@@ -7,6 +7,7 @@ export default async function ContactsPage() {
   const session = await getSession()
   const contacts = await prisma.contact.findMany({
     where: { userId: session?.userId },
+    select: { id: true, name: true, phone: true, email: true, country: true, tags: true, createdAt: true },
     orderBy: { createdAt: 'desc' },
   })
 

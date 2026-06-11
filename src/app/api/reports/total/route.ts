@@ -2,20 +2,45 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { parsePricing, getRate } from '@/lib/billing'
+import { fetchLogsForAppIds, resolveReportAppIds } from '@/lib/infobip'
+import * as XLSX from 'xlsx'
+
+function periodDates(period: string, from?: string, to?: string) {
+  const now = new Date()
+  if (period === 'today') {
+    const start = new Date(now); start.setHours(0, 0, 0, 0)
+    return { sentSince: start.toISOString(), sentUntil: now.toISOString() }
+  }
+  if (period === 'week') {
+    const start = new Date(now); start.setDate(now.getDate() - 7); start.setHours(0, 0, 0, 0)
+    return { sentSince: start.toISOString(), sentUntil: now.toISOString() }
+  }
+  if (period === 'month') {
+    const start = new Date(now); start.setDate(1); start.setHours(0, 0, 0, 0)
+    return { sentSince: start.toISOString(), sentUntil: now.toISOString() }
+  }
+  if (period === 'custom' && from && to) {
+    return {
+      sentSince: new Date(from).toISOString(),
+      sentUntil: new Date(to + 'T23:59:59').toISOString(),
+    }
+  }
+  return {}
+}
 
 function dateRange(period: string, from?: string, to?: string) {
   const now = new Date()
   if (period === 'today') {
     const start = new Date(now); start.setHours(0, 0, 0, 0)
-    return { gte: start }
+    return { gte: start, lte: now }
   }
   if (period === 'week') {
     const start = new Date(now); start.setDate(now.getDate() - 7); start.setHours(0, 0, 0, 0)
-    return { gte: start }
+    return { gte: start, lte: now }
   }
   if (period === 'month') {
     const start = new Date(now); start.setDate(1); start.setHours(0, 0, 0, 0)
-    return { gte: start }
+    return { gte: start, lte: now }
   }
   if (period === 'custom' && from && to) {
     return { gte: new Date(from), lte: new Date(to + 'T23:59:59') }
@@ -28,111 +53,76 @@ export async function GET(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
   const { searchParams } = req.nextUrl
-  const period   = searchParams.get('period') ?? 'month'
-  const from     = searchParams.get('from') ?? undefined
-  const to       = searchParams.get('to') ?? undefined
-  const channel  = searchParams.get('channel') ?? undefined
-  const resellerId = searchParams.get('resellerId') ?? undefined
-  const userId   = searchParams.get('userId') ?? undefined
+  const period  = searchParams.get('period') ?? 'month'
+  const from    = searchParams.get('from') ?? undefined
+  const to      = searchParams.get('to') ?? undefined
+  const channel = searchParams.get('channel') ?? undefined
 
-  // Build user filter based on role
-  let userIds: string[] = []
+  const dates = periodDates(period, from, to)
+  const appIds = await resolveReportAppIds(session.userId, session.role)
+  const allLogs = await fetchLogsForAppIds(appIds, dates, channel)
 
-  if (session.role === 'admin') {
-    const where: Record<string, unknown> = { role: { not: 'admin' } }
-    if (resellerId) where.parentId = resellerId
-    if (userId) where.id = userId
-    const users = await prisma.user.findMany({ where, select: { id: true } })
-    userIds = users.map((u) => u.id)
-  } else if (session.role === 'reseller') {
-    // Ver todos los clientes del reseller y sus usuarios hijos
-    const clients = await prisma.user.findMany({
-      where: { parentId: session.userId },
-      select: { id: true },
-    })
-    const clientIds = clients.map((c) => c.id)
-    const childUsers = await prisma.user.findMany({
-      where: { parentId: { in: clientIds } },
-      select: { id: true },
-    })
-    const allIds = [...clientIds, ...childUsers.map((u) => u.id)]
-    userIds = userId ? allIds.filter((id) => id === userId) : allIds
-  } else if (session.role === 'client') {
-    // Ver sus propios mensajes y los de sus usuarios
-    const childUsers = await prisma.user.findMany({
-      where: { parentId: session.userId },
-      select: { id: true },
-    })
-    userIds = userId ? [userId] : [session.userId, ...childUsers.map((u) => u.id)]
-  } else {
-    userIds = [session.userId]
+  const totalSms = allLogs.filter((m) => m.channel === 'sms').length
+  const totalWa  = allLogs.filter((m) => m.channel === 'whatsapp').length
+  const total    = allLogs.length
+  const delivered = allLogs.filter((m) => m.statusGroup === 'DELIVERED').length
+  const failed    = allLogs.filter((m) => ['UNDELIVERABLE', 'REJECTED', 'EXPIRED'].includes(m.statusGroup)).length
+
+  // Compute cost using prisma messages with pricing fallback
+  const createdAt = dateRange(period, from, to)
+  const userIds = appIds.length > 0 ? undefined : [session.userId]
+
+  const dbMessages = await prisma.message.findMany({
+    where: {
+      ...(userIds ? { userId: { in: userIds } } : {}),
+      ...(channel ? { channel } : {}),
+      ...(createdAt ? { createdAt } : {}),
+    },
+    select: {
+      channel: true,
+      category: true,
+      cost: true,
+      user: { select: { pricing: true, parent: { select: { pricing: true } } } },
+    },
+  })
+
+  const cost = dbMessages.reduce((acc, m) => {
+    if (m.cost != null) return acc + m.cost
+    const rawPricing = m.user.pricing ?? m.user.parent?.pricing ?? null
+    const pricing = parsePricing(rawPricing)
+    const rate = getRate(pricing, m.channel, m.category ?? undefined)
+    return acc + rate
+  }, 0)
+
+  const row = {
+    id: 'platform',
+    name: 'Plataforma',
+    email: '',
+    role: session.role,
+    reseller: null,
+    total,
+    sent: total,
+    delivered,
+    failed,
+    bySms: totalSms,
+    byWa: totalWa,
+    byRcs: 0,
+    pricePerMessage: null,
+    cost: cost > 0 ? cost : (allLogs.reduce((sum, m) => sum + (m.pricePerMessage ?? 0), 0) || null),
   }
 
-  if (userIds.length === 0) return NextResponse.json([])
-
-  const createdAt = dateRange(period, from, to)
-
-  // Fetch all users with their message counts
-  const users = await prisma.user.findMany({
-    where: { id: { in: userIds } },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      pricing: true,
-      parent: { select: { id: true, name: true, pricing: true } },
-      messages: {
-        where: {
-          ...(channel ? { channel } : {}),
-          ...(createdAt ? { createdAt } : {}),
-        },
-        select: { channel: true, category: true, status: true, cost: true },
-      },
-    },
-    orderBy: { name: 'asc' },
-  })
-
-  const rows = users.map((u) => {
-    const msgs = u.messages
-    const total = msgs.length
-    const sent = msgs.filter((m) => m.status === 'sent' || m.status === 'delivered').length
-    const delivered = msgs.filter((m) => m.status === 'delivered').length
-    const failed = msgs.filter((m) => m.status === 'failed').length
-    const bySms = msgs.filter((m) => m.channel === 'sms').length
-    const byWa  = msgs.filter((m) => m.channel === 'whatsapp').length
-    const byRcs = msgs.filter((m) => m.channel === 'rcs').length
-
-    const rawPricing = u.pricing ?? u.parent?.pricing ?? null
-    const pricing = parsePricing(rawPricing)
-    const cost = msgs.reduce((acc, m) => {
-      if (m.cost != null) return acc + m.cost
-      const rate = getRate(pricing, m.channel, m.category ?? undefined)
-      return acc + rate
-    }, 0)
-
-    return {
-      id: u.id,
-      name: u.name,
-      email: u.email,
-      role: u.role,
-      reseller: u.parent?.name ?? null,
-      total, sent, delivered, failed,
-      bySms, byWa, byRcs,
-      cost,
-    }
-  })
-
   const fmt = searchParams.get('format')
+
   if (fmt === 'csv') {
-    const headers = ['Usuario','Email','Rol','Reseller','SMS','WhatsApp','RCS','Total','Enviados','Entregados','Fallidos','Precio/msg','Costo Total']
+    const headers = ['Usuario', 'SMS', 'WhatsApp', 'RCS', 'Total', 'Entregados', 'Fallidos', 'Costo Total']
     const lines = [
       headers.join(','),
-      ...rows.map((r) => [
-        `"${r.name}"`, `"${r.email}"`, r.role, `"${r.reseller ?? ''}"`,
-        r.bySms, r.byWa, r.byRcs, r.total, r.sent, r.delivered, r.failed,
-        '',
-      ].join(',')),
+      [
+        `"${row.name}"`,
+        row.bySms, row.byWa, row.byRcs, row.total,
+        row.delivered, row.failed,
+        row.cost?.toFixed(2) ?? '',
+      ].join(','),
     ]
     return new NextResponse(lines.join('\n'), {
       headers: {
@@ -142,5 +132,26 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  return NextResponse.json(rows)
+  if (fmt === 'xlsx') {
+    const headers = ['Usuario', 'SMS', 'WhatsApp', 'RCS', 'Total', 'Entregados', 'Fallidos', 'Costo Total']
+    const rows = [[
+      row.name,
+      row.bySms, row.byWa, row.byRcs, row.total,
+      row.delivered, row.failed,
+      row.cost ?? '',
+    ]]
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
+    ws['!cols'] = [{ wch: 24 }, { wch: 8 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 12 }, { wch: 10 }, { wch: 14 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Resumen')
+    const buf: Buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
+    return new NextResponse(buf, {
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': 'attachment; filename="reporte-resumen.xlsx"',
+      },
+    })
+  }
+
+  return NextResponse.json([row])
 }

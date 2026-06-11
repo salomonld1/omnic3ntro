@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { prisma } from '@/lib/prisma'
-import { resolveCredentials } from '@/lib/infobip'
+import { resolveCredentials, resolveAppId } from '@/lib/infobip'
 import { checkBilling, recordDebit } from '@/lib/billing'
+import { prisma } from '@/lib/prisma'
+import { normalizePhone } from '@/lib/phone'
 
 type ContactPayload = { to: string; message?: string; name?: string }
 
@@ -31,10 +32,11 @@ export async function POST(req: NextRequest) {
   const billing = await checkBilling(session.userId, 'rcs', resolvedCategory)
   if (!billing.canSend) return NextResponse.json({ error: billing.error }, { status: 402 })
 
-  const recipients: ContactPayload[] =
+  const recipients: ContactPayload[] = (
     contacts.length > 0
       ? contacts
       : numbers.map((to) => ({ to, message }))
+  ).map((c) => ({ ...c, to: normalizePhone(c.to) }))
 
   const campaign = await prisma.campaign.create({
     data: {
@@ -61,22 +63,26 @@ export async function POST(req: NextRequest) {
 
   try {
     const { apiKey, baseUrl } = await resolveCredentials(session.userId)
-
-    if (apiKey && baseUrl) {
-      await Promise.allSettled(
-        recipients.map((c) =>
-          fetch(`https://${baseUrl}/rcs/1/message`, {
-            method: 'POST',
-            headers: { Authorization: `App ${apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              from: from || undefined,
-              to: c.to,
-              content: { text: c.message || message },
-            }),
-          })
-        )
-      )
+    if (!apiKey || !baseUrl) {
+      return NextResponse.json({ error: 'Credenciales Infobip no configuradas' }, { status: 503 })
     }
+
+    const appId = await resolveAppId(session.userId)
+
+    await Promise.allSettled(
+      recipients.map((c) =>
+        fetch(`https://${baseUrl}/rcs/1/message`, {
+          method: 'POST',
+          headers: { Authorization: `App ${apiKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            from: from || undefined,
+            to: c.to,
+            ...(appId ? { callbackData: appId } : {}),
+            content: { text: c.message || message },
+          }),
+        })
+      )
+    )
 
     await prisma.campaign.update({
       where: { id: campaign.id },
@@ -88,10 +94,10 @@ export async function POST(req: NextRequest) {
     })
 
     await recordDebit(session.userId, recipients.length, 'rcs', resolvedCategory)
+
     const warning = 'warning' in billing ? billing.warning : undefined
-    return NextResponse.json({ success: true, campaignId: campaign.id, total: recipients.length, warning })
+    return NextResponse.json({ success: true, total: recipients.length, warning })
   } catch (err) {
-    await prisma.campaign.update({ where: { id: campaign.id }, data: { status: 'failed' } })
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }
 }

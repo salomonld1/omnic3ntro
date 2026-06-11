@@ -5,7 +5,7 @@ import Link from 'next/link'
 import {
   UserPlus, Pencil, Trash2, Key, CheckCircle, XCircle,
   Shield, User, Users, LogIn, CreditCard, X, Plus, RotateCcw, Building2,
-  ChevronsUpDown, ChevronUp, ChevronDown,
+  ChevronsUpDown, ChevronUp, ChevronDown, History,
 } from 'lucide-react'
 
 type UserRow = {
@@ -16,12 +16,15 @@ type UserRow = {
   parentId: string | null
   apiKey: string | null
   infobipBaseUrl: string | null
+  infobipAppId: string | null
+  pricePerMessage: number | null
   createdAt: string
   parent: { id: string; name: string; parentId: string | null } | null
   billingType: string | null
   balance: number | null
   balanceExpiresAt: string | null
   creditLimit: number | null
+  alertAmount: number | null
   _count: { messages: number; campaigns: number; children: number }
 }
 
@@ -53,7 +56,9 @@ function BillingModal({ user, onClose, onUpdate }: {
   const [billingType, setBillingType] = useState(user.billingType ?? '')
   const [topupAmount, setTopupAmount] = useState('')
   const [topupExpiry, setTopupExpiry] = useState('')
+  const [topupNote, setTopupNote] = useState('')
   const [newLimit, setNewLimit] = useState(user.creditLimit?.toString() ?? '')
+  const [newAlert, setNewAlert] = useState(user.alertAmount?.toString() ?? '')
   const [loading, setLoading] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
   const [error, setError] = useState('')
@@ -85,6 +90,7 @@ function BillingModal({ user, onClose, onUpdate }: {
       setNewLimit(u.creditLimit?.toString() ?? '')
       setTopupAmount('')
       setTopupExpiry('')
+      setTopupNote('')
     } finally {
       setLoading(null)
     }
@@ -111,25 +117,30 @@ function BillingModal({ user, onClose, onUpdate }: {
         <div className="p-5 space-y-5">
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Tipo de facturación</p>
-            <div className="flex gap-2">
-              {[
-                { value: '', label: 'Sin facturación' },
-                { value: 'prepaid', label: 'Prepago' },
-                { value: 'postpaid', label: 'Postpago' },
-              ].map((opt) => (
-                <button key={opt.value} type="button"
-                  onClick={() => changeBillingType(opt.value)}
-                  disabled={loading === 'type'}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-50 ${
-                    billingType === opt.value
-                      ? 'bg-sky-600 text-white border-sky-600'
-                      : 'bg-white text-slate-600 border-slate-300 hover:border-sky-400'
-                  }`}>
-                  {opt.label}
-                </button>
-              ))}
-              {saved === 'type' && <span className="text-xs text-emerald-600 self-center">✓</span>}
-            </div>
+            {user.billingType ? (
+              <span className={`inline-flex px-3 py-1.5 rounded-lg text-xs font-medium border ${
+                user.billingType === 'prepaid'
+                  ? 'bg-sky-50 text-sky-700 border-sky-200'
+                  : 'bg-violet-50 text-violet-700 border-violet-200'
+              }`}>
+                {user.billingType === 'prepaid' ? 'Prepago' : 'Postpago'}
+              </span>
+            ) : (
+              <div className="flex gap-2">
+                {[
+                  { value: 'prepaid', label: 'Prepago' },
+                  { value: 'postpaid', label: 'Postpago' },
+                ].map((opt) => (
+                  <button key={opt.value} type="button"
+                    onClick={() => changeBillingType(opt.value)}
+                    disabled={loading === 'type'}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium border bg-white text-slate-600 border-slate-300 hover:border-sky-400 transition-colors disabled:opacity-50">
+                    {opt.label}
+                  </button>
+                ))}
+                {saved === 'type' && <span className="text-xs text-emerald-600 self-center">✓</span>}
+              </div>
+            )}
           </div>
 
           {billingType === 'prepaid' && (
@@ -167,9 +178,15 @@ function BillingModal({ user, onClose, onUpdate }: {
                     onChange={(e) => setTopupExpiry(e.target.value)}
                     className="w-full px-2.5 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
                 </div>
+                <input
+                  type="text"
+                  value={topupNote}
+                  onChange={(e) => setTopupNote(e.target.value)}
+                  placeholder="Nota (requerido) — ej: Pago factura #123"
+                  className="w-full px-2.5 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
                 <button
-                  onClick={() => topupAmount && post({ type: 'topup', amount: topupAmount, expiresAt: topupExpiry || undefined }, 'topup')}
-                  disabled={loading === 'topup' || !topupAmount}
+                  onClick={() => topupAmount && topupNote.trim() && post({ type: 'topup', amount: topupAmount, note: topupNote.trim(), expiresAt: topupExpiry || undefined }, 'topup')}
+                  disabled={loading === 'topup' || !topupAmount || !topupNote.trim()}
                   className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors">
                   {loading === 'topup' ? 'Guardando...' : saved === 'topup' ? '✓ Recargado' : 'Recargar saldo'}
                 </button>
@@ -218,6 +235,26 @@ function BillingModal({ user, onClose, onUpdate }: {
                     disabled={loading === 'limit' || newLimit === ''}
                     className="px-4 py-2 bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap">
                     {loading === 'limit' ? '...' : saved === 'limit' ? '✓' : 'Guardar'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="border border-slate-200 rounded-xl p-4 space-y-2">
+                <p className="text-xs font-semibold text-slate-600">Alerta de saldo (MXN)</p>
+                <p className="text-xs text-slate-400">Se enviará un email cuando el uso supere este monto.</p>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                    <input type="number" step="0.01" min="0" value={newAlert}
+                      onChange={(e) => setNewAlert(e.target.value)}
+                      placeholder="500.00"
+                      className="w-full pl-6 pr-2 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
+                  </div>
+                  <button
+                    onClick={() => newAlert !== '' && post({ type: 'set_alert', alertAmount: newAlert }, 'alert')}
+                    disabled={loading === 'alert' || newAlert === ''}
+                    className="px-4 py-2 bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap">
+                    {loading === 'alert' ? '...' : saved === 'alert' ? '✓' : 'Guardar'}
                   </button>
                 </div>
               </div>
@@ -339,7 +376,7 @@ export function UserList({
     'Nuevo'
 
   const showParentCol = viewerRole === 'admin'
-  const showBillingBtn = (u: UserRow) => u.role === 'client'
+  const showBillingBtn = (u: UserRow) => u.role === 'client' || u.role === 'reseller'
 
   return (
     <div>
@@ -391,7 +428,8 @@ export function UserList({
               : 'Ningún resultado para esa búsqueda.'}
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
                 {(
@@ -423,6 +461,8 @@ export function UserList({
                   </th>
                 )}
                 <th className="px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">Conector</th>
+                <th className="px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">App ID</th>
+                <th className="px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">Precio/msg</th>
                 <th className="px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden lg:table-cell">API Key</th>
                 <th className="px-5 py-3 hidden md:table-cell">
                   <button onClick={() => handleSort('balance')} className="flex items-center gap-1 text-xs font-semibold text-slate-500 uppercase tracking-wide hover:text-slate-800 transition-colors">
@@ -486,6 +526,22 @@ export function UserList({
                         </span>
                       )}
                     </td>
+                    <td className="px-5 py-3.5 hidden md:table-cell">
+                      {u.infobipAppId ? (
+                        <span className="font-mono text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
+                          {u.infobipAppId}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-xs">—</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 hidden md:table-cell">
+                      {u.pricePerMessage != null ? (
+                        <span className="font-mono text-xs text-slate-700">${u.pricePerMessage.toFixed(4)}</span>
+                      ) : (
+                        <span className="text-slate-400 text-xs">—</span>
+                      )}
+                    </td>
                     <td className="px-5 py-3.5 hidden lg:table-cell">
                       {u.apiKey ? (
                         <span className="inline-flex items-center gap-1 text-emerald-600 text-xs">
@@ -545,6 +601,15 @@ export function UserList({
                             <LogIn className="w-4 h-4" />
                           </button>
                         )}
+                        {(u.role === 'client' || u.role === 'reseller') && (
+                          <Link
+                            href={`/users/${u.id}/transactions`}
+                            className="p-1.5 rounded-md text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors"
+                            title="Historial de transacciones"
+                          >
+                            <History className="w-4 h-4" />
+                          </Link>
+                        )}
                         {showBillingBtn(u) && (
                           <button
                             onClick={() => setBillingUser(u)}
@@ -582,6 +647,7 @@ export function UserList({
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

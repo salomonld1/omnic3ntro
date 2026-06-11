@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { Key, RefreshCw, CreditCard, Plus, RotateCcw } from 'lucide-react'
+import { Key, RefreshCw, CreditCard, Plus, RotateCcw, Lock, History } from 'lucide-react'
+import Link from 'next/link'
 
 type User = {
   id: string
@@ -12,35 +13,40 @@ type User = {
   apiKey: string | null
   infobipApiKey: string | null
   infobipBaseUrl: string | null
+  infobipAppId: string | null
   pricing: string | null
   billingType: string | null
   balance: number | null
   balanceExpiresAt: string | null
   creditLimit: number | null
+  alertAmount: number | null
   parent: { id: string; name: string } | null
 }
 
-type Reseller = { id: string; name: string }
+type ParentOption = { id: string; name: string }
 
 export function EditUserForm({
   user,
   viewerRole,
   resellers,
+  clients,
 }: {
   user: User
   viewerRole: string
-  resellers: Reseller[]
+  resellers: ParentOption[]
+  clients: ParentOption[]
 }) {
   const [profile, setProfile] = useState({
     name: user.name,
     email: user.email,
-    password: '',
     role: user.role,
     parentId: user.parentId ?? '',
   })
+  const [pwd, setPwd] = useState('')
   const [infobip, setInfobip] = useState({
     apiKey: user.infobipApiKey ?? '',
     baseUrl: user.infobipBaseUrl ?? '',
+    appId: user.infobipAppId ?? '',
   })
   const [apiKey, setApiKey] = useState(user.apiKey)
 
@@ -78,7 +84,9 @@ export function EditUserForm({
   })
   const [topupAmount, setTopupAmount] = useState('')
   const [topupExpiry, setTopupExpiry] = useState('')
+  const [topupNote, setTopupNote] = useState('')
   const [newLimit, setNewLimit] = useState('')
+  const [newAlert, setNewAlert] = useState(user.alertAmount?.toString() ?? '')
   const [saved, setSaved] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState<string | null>(null)
@@ -107,19 +115,24 @@ export function EditUserForm({
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault()
-    const data: Record<string, unknown> = {
+    await patch({
       name: profile.name,
       email: profile.email,
       role: profile.role,
       parentId: profile.parentId || null,
-    }
-    if (profile.password) data.password = profile.password
-    await patch(data, 'profile')
+    }, 'profile')
+  }
+
+  async function savePassword(e: React.FormEvent) {
+    e.preventDefault()
+    if (!pwd) return
+    await patch({ password: pwd }, 'password')
+    setPwd('')
   }
 
   async function saveInfobip(e: React.FormEvent) {
     e.preventDefault()
-    await patch({ infobipApiKey: infobip.apiKey, infobipBaseUrl: infobip.baseUrl }, 'infobip')
+    await patch({ infobipApiKey: infobip.apiKey, infobipBaseUrl: infobip.baseUrl, infobipAppId: infobip.appId }, 'infobip')
   }
 
   async function billingPost(body: Record<string, unknown>, section: string) {
@@ -157,7 +170,8 @@ export function EditUserForm({
 
   async function handleTopup(e: React.FormEvent) {
     e.preventDefault()
-    await billingPost({ type: 'topup', amount: topupAmount, expiresAt: topupExpiry || undefined }, 'topup')
+    await billingPost({ type: 'topup', amount: topupAmount, note: topupNote.trim(), expiresAt: topupExpiry || undefined }, 'topup')
+    setTopupNote('')
   }
 
   async function handleSetLimit(e: React.FormEvent) {
@@ -216,15 +230,15 @@ export function EditUserForm({
               className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent" />
           </div>
 
-          {viewerRole === 'admin' && profile.role === 'user' && resellers.length > 0 && (
+          {viewerRole === 'admin' && profile.role === 'reseller' && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                Reseller <span className="text-slate-400 font-normal">(opcional)</span>
+                Superior <span className="text-slate-400 font-normal">(opcional)</span>
               </label>
               <select value={profile.parentId}
                 onChange={(e) => setProfile({ ...profile, parentId: e.target.value })}
                 className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent bg-white">
-                <option value="">Sin reseller (cliente directo)</option>
+                <option value="">Sin superior</option>
                 {resellers.map((r) => (
                   <option key={r.id} value={r.id}>{r.name}</option>
                 ))}
@@ -235,15 +249,35 @@ export function EditUserForm({
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              Nueva contraseña <span className="text-slate-400 font-normal">(opcional)</span>
-            </label>
-            <input type="password" value={profile.password}
-              onChange={(e) => setProfile({ ...profile, password: e.target.value })}
-              placeholder="Dejar vacío para no cambiar"
-              className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent" />
-          </div>
+          {viewerRole === 'admin' && profile.role === 'user' && (clients.length > 0 || resellers.length > 0) && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Cliente / Reseller <span className="text-slate-400 font-normal">(opcional)</span>
+              </label>
+              <select value={profile.parentId}
+                onChange={(e) => setProfile({ ...profile, parentId: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent bg-white">
+                <option value="">Sin asignar</option>
+                {clients.length > 0 && (
+                  <optgroup label="Clientes">
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {resellers.length > 0 && (
+                  <optgroup label="Resellers">
+                    {resellers.map((r) => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+              {user.parent && (
+                <p className="text-xs text-slate-400 mt-1">Actualmente: {user.parent.name}</p>
+              )}
+            </div>
+          )}
 
           {error && <div className="bg-rose-50 text-rose-600 text-sm px-3.5 py-2.5 rounded-lg border border-rose-200">{error}</div>}
 
@@ -285,6 +319,21 @@ export function EditUserForm({
                   placeholder={viewerRole === 'admin' ? 'xxxxxx.api.infobip.com' : 'URL de acceso'}
                   className="flex-1 px-3.5 py-2.5 border border-slate-300 rounded-r-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent font-mono" />
               </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Application ID <span className="text-slate-400 font-normal">(Infobip)</span>
+              </label>
+              <input type="text" value={infobip.appId}
+                onChange={(e) => setInfobip({ ...infobip, appId: e.target.value.replace(/\D/g, '').slice(0, 5) })}
+                placeholder="Ej: 12345"
+                inputMode="numeric"
+                minLength={5}
+                maxLength={5}
+                pattern="[0-9]{5}"
+                required={user.role === 'client' || user.role === 'reseller'}
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent font-mono" />
+              <p className="text-xs text-slate-400 mt-1">ID de la Application creada en el portal de Infobip. Se usa para filtrar reportes por cliente.</p>
             </div>
             <div className="flex items-center gap-3">
               <button type="submit" disabled={loading === 'infobip'}
@@ -375,25 +424,30 @@ export function EditUserForm({
           {/* Tipo de facturación */}
           <div className="mb-5">
             <p className="text-sm font-medium text-slate-700 mb-2">Tipo</p>
-            <div className="flex gap-2">
-              {[
-                { value: '', label: 'Sin facturación' },
-                { value: 'prepaid', label: 'Prepago' },
-                { value: 'postpaid', label: 'Postpago' },
-              ].map((opt) => (
-                <button key={opt.value} type="button"
-                  onClick={() => changeBillingType(opt.value)}
-                  disabled={loading === 'billingType'}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors disabled:opacity-50 ${
-                    billing.billingType === opt.value
-                      ? 'bg-sky-600 text-white border-sky-600'
-                      : 'bg-white text-slate-600 border-slate-300 hover:border-sky-400'
-                  }`}>
-                  {opt.label}
-                </button>
-              ))}
-              {saved === 'billingType' && <span className="text-sm text-emerald-600 self-center ml-1">✓</span>}
-            </div>
+            {billing.billingType ? (
+              <span className={`inline-flex px-4 py-2 rounded-lg text-sm font-medium border ${
+                billing.billingType === 'prepaid'
+                  ? 'bg-sky-50 text-sky-700 border-sky-200'
+                  : 'bg-violet-50 text-violet-700 border-violet-200'
+              }`}>
+                {billing.billingType === 'prepaid' ? 'Prepago' : 'Postpago'}
+              </span>
+            ) : (
+              <div className="flex gap-2">
+                {[
+                  { value: 'prepaid', label: 'Prepago' },
+                  { value: 'postpaid', label: 'Postpago' },
+                ].map((opt) => (
+                  <button key={opt.value} type="button"
+                    onClick={() => changeBillingType(opt.value)}
+                    disabled={loading === 'billingType'}
+                    className="px-4 py-2 rounded-lg text-sm font-medium border bg-white text-slate-600 border-slate-300 hover:border-sky-400 transition-colors disabled:opacity-50">
+                    {opt.label}
+                  </button>
+                ))}
+                {saved === 'billingType' && <span className="text-sm text-emerald-600 self-center ml-1">✓</span>}
+              </div>
+            )}
           </div>
 
           {/* Prepago */}
@@ -435,8 +489,15 @@ export function EditUserForm({
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
                 </div>
                 <p className="text-xs text-slate-400">Monto (MXN) · Vigencia (opcional, sobreescribe la anterior)</p>
+                <input
+                  type="text"
+                  required
+                  value={topupNote}
+                  onChange={(e) => setTopupNote(e.target.value)}
+                  placeholder="Nota — ej: Pago factura #123"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
                 <div className="flex items-center gap-3">
-                  <button type="submit" disabled={loading === 'topup'}
+                  <button type="submit" disabled={loading === 'topup' || !topupNote.trim()}
                     className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors">
                     <Plus className="w-4 h-4" /> {loading === 'topup' ? 'Guardando...' : 'Recargar'}
                   </button>
@@ -493,6 +554,25 @@ export function EditUserForm({
                 </div>
               </form>
 
+              <form onSubmit={async (e) => { e.preventDefault(); await billingPost({ type: 'set_alert', alertAmount: newAlert }, 'alert') }} className="border border-slate-200 rounded-lg p-4 space-y-3">
+                <p className="text-sm font-medium text-slate-700">Alerta de saldo</p>
+                <p className="text-xs text-slate-400">Se enviará un email cuando el uso supere este monto.</p>
+                <div className="flex items-center gap-3 max-w-xs">
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                    <input type="number" step="0.01" min="0" required value={newAlert}
+                      onChange={(e) => setNewAlert(e.target.value)}
+                      placeholder="500.00"
+                      className="w-full pl-7 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
+                  </div>
+                  <button type="submit" disabled={loading === 'alert'}
+                    className="px-4 py-2 bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors">
+                    {loading === 'alert' ? 'Guardando...' : 'Guardar'}
+                  </button>
+                  {saved === 'alert' && <span className="text-sm text-emerald-600">✓</span>}
+                </div>
+              </form>
+
               <div className="flex items-center gap-3">
                 <button type="button" onClick={handleResetDebt} disabled={loading === 'resetDebt' || billing.balance === 0}
                   className="flex items-center gap-1.5 px-4 py-2 border border-slate-300 hover:border-amber-400 hover:text-amber-600 text-slate-600 text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
@@ -535,6 +615,52 @@ export function EditUserForm({
           <p className="text-xs text-amber-600 mt-2">⚠ Copia esta key ahora. No se puede recuperar después de regenerarla.</p>
         )}
       </div>
+
+      {/* Contraseña */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <div className="flex items-center gap-2 mb-1">
+          <Lock className="w-4 h-4 text-slate-500" />
+          <h2 className="font-semibold text-slate-800">Contraseña</h2>
+        </div>
+        <p className="text-sm text-slate-500 mb-5">Escribe una nueva contraseña para reemplazar la actual.</p>
+        <form onSubmit={savePassword} className="space-y-4">
+          <div className="max-w-sm">
+            <input
+              type="password"
+              value={pwd}
+              onChange={(e) => setPwd(e.target.value)}
+              placeholder="Nueva contraseña"
+              minLength={6}
+              required
+              className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <button type="submit" disabled={loading === 'password' || !pwd}
+              className="px-4 py-2 bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors">
+              {loading === 'password' ? 'Guardando...' : 'Cambiar contraseña'}
+            </button>
+            {saved === 'password' && <span className="text-sm text-emerald-600">✓ Contraseña actualizada</span>}
+          </div>
+        </form>
+      </div>
+
+      {/* Historial de transacciones — para clientes y resellers */}
+      {(user.role === 'client' || user.role === 'reseller') && (
+        <Link
+          href={`/users/${user.id}/transactions`}
+          className="flex items-center gap-3 bg-white rounded-xl border border-slate-200 p-5 hover:border-sky-300 hover:bg-sky-50 transition-colors group"
+        >
+          <div className="p-2.5 bg-slate-100 rounded-lg group-hover:bg-sky-100 transition-colors">
+            <History className="w-5 h-5 text-slate-500 group-hover:text-sky-600 transition-colors" />
+          </div>
+          <div className="flex-1">
+            <p className="font-medium text-slate-800">Historial de transacciones</p>
+            <p className="text-sm text-slate-400">Ver recargas y débitos de este cliente</p>
+          </div>
+          <span className="text-slate-300 group-hover:text-sky-400 text-lg">→</span>
+        </Link>
+      )}
 
       <div className="flex justify-end">
         <a href="/users" className="text-sm text-slate-500 hover:text-slate-700">← Volver a la lista</a>

@@ -31,7 +31,7 @@ function isValidPricing(raw: unknown): boolean {
 }
 
 async function canManage(session: { userId: string; role: string }, targetId: string) {
-  if (session.role === 'admin') return true
+  if (session.role === 'admin' || session.role === 'superadmin') return true
   if (session.role === 'reseller' || session.role === 'client') {
     const target = await prisma.user.findUnique({ where: { id: targetId }, select: { parentId: true } })
     return target?.parentId === session.userId
@@ -59,11 +59,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       apiKey: true,
       infobipApiKey: true,
       infobipBaseUrl: true,
+      infobipAppId: true,
       pricing: true,
       billingType: true,
       balance: true,
       balanceExpiresAt: true,
       creditLimit: true,
+      alertAmount: true,
       createdAt: true,
       parent: { select: { id: true, name: true } },
     },
@@ -86,7 +88,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   if (!existing) return NextResponse.json({ error: 'Usuario no encontrado' }, { status: 404 })
 
   const body = await request.json()
-  const { name, email, password, role, infobipApiKey, infobipBaseUrl, generateApiKey, parentId, pricing } = body
+  const { name, email, password, role, infobipApiKey, infobipBaseUrl, infobipAppId, generateApiKey, parentId, pricing } = body
 
   if (email && email !== existing.email) {
     const emailTaken = await prisma.user.findUnique({ where: { email } })
@@ -118,6 +120,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   }
   if (infobipApiKey !== undefined) data.infobipApiKey = infobipApiKey || null
   if (infobipBaseUrl !== undefined) data.infobipBaseUrl = infobipBaseUrl || null
+  if (infobipAppId !== undefined) data.infobipAppId = infobipAppId || null
   if (pricing !== undefined) data.pricing = pricing || null
   if (generateApiKey) data.apiKey = `o3_${crypto.randomBytes(24).toString('hex')}`
 

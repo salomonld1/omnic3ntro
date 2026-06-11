@@ -21,12 +21,14 @@ model User {
   apiKey           String?    @unique
   infobipApiKey    String?
   infobipBaseUrl   String?
+  infobipAppId     String?
   pricing          String?    // JSON: { sms:{marketing,transaccional}, whatsapp:{marketing,otp,notificacion}, rcs:{simple,basic,conversacional} }
   balanceManager   String?    // para resellers: 'admin' | 'reseller' | 'both' — quién puede asignar saldo a sus clientes
   billingType      String?    // 'prepaid' | 'postpaid'
   balance          Float?     // prepago: saldo restante; postpago: deuda acumulada
   balanceExpiresAt DateTime?  // prepago: fecha de vencimiento del saldo
   creditLimit      Float?     // postpago: crédito máximo autorizado
+  alertAmount      Float?     // postpago: monto en que se manda alerta por email
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
   messages         Message[]
