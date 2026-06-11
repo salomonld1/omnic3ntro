@@ -21,6 +21,7 @@ import {
   Shield,
   PanelLeftClose,
   PanelLeftOpen,
+  CreditCard,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { logout } from '@/app/actions/auth'
@@ -50,6 +51,7 @@ const clientNavItemsBottom = [
   { href: '/users', label: 'Mis Usuarios', icon: UserCog },
   { href: '/contacts', label: 'Contactos', icon: Users },
   { href: '/templates', label: 'Plantillas', icon: FileText },
+  { href: '/pricing', label: 'Mis Tarifas', icon: CreditCard },
   { href: '/settings', label: 'Configuración', icon: Settings },
 ]
 
@@ -73,6 +75,7 @@ const adminNavItems = [
 const adminMgmtItems = [
   { href: '/users/admins', label: 'Administradores', icon: Shield    },
   { href: '/users',        label: 'Clientes',         icon: Building2 },
+  { href: '/billing',      label: 'Saldos',           icon: CreditCard },
 ]
 
 interface SidebarProps {
@@ -111,18 +114,20 @@ export function Sidebar({ role }: SidebarProps) {
   }
 
   const navItems =
-    role === 'admin'    ? adminNavItems    :
-    role === 'reseller' ? resellerNavItems :
-    role === 'client'   ? clientNavItems   :
+    role === 'superadmin' ? adminNavItems    :
+    role === 'admin'      ? adminNavItems    :
+    role === 'reseller'   ? resellerNavItems :
+    role === 'account'    ? clientNavItems   :
+    role === 'client'     ? clientNavItems   :
     userNavItems
 
   const navItemsBottom =
-    role === 'user'   ? userNavItemsBottom   :
-    role === 'client' ? clientNavItemsBottom :
+    role === 'user'                      ? userNavItemsBottom   :
+    role === 'account' || role === 'client' ? clientNavItemsBottom :
     []
 
-  // Resellers and clients see reports too
-  const showReports = role === 'user' || role === 'client' || role === 'reseller' || role === 'admin'
+  const showReports = ['user', 'account', 'client', 'reseller', 'admin', 'superadmin'].includes(role)
+  const showAdminMenu = role === 'admin' || role === 'superadmin'
 
   return (
     <div className={cn(
@@ -181,8 +186,8 @@ export function Sidebar({ role }: SidebarProps) {
 
         {navItemsBottom.map((item) => <NavLink key={item.href} {...item} />)}
 
-        {/* Administración — solo para admin */}
-        {role === 'admin' && (
+        {/* Administración — solo para admin/superadmin */}
+        {showAdminMenu && (
           <div>
             <button
               onClick={() => !collapsed && setAdminOpen((o) => !o)}

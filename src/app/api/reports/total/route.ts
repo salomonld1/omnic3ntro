@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
+import { parsePricing, getRate } from '@/lib/billing'
 import { fetchLogsForAppIds, resolveReportAppIds } from '@/lib/infobip'
 import * as XLSX from 'xlsx'
 
@@ -26,6 +28,26 @@ function periodDates(period: string, from?: string, to?: string) {
   return {}
 }
 
+function dateRange(period: string, from?: string, to?: string) {
+  const now = new Date()
+  if (period === 'today') {
+    const start = new Date(now); start.setHours(0, 0, 0, 0)
+    return { gte: start, lte: now }
+  }
+  if (period === 'week') {
+    const start = new Date(now); start.setDate(now.getDate() - 7); start.setHours(0, 0, 0, 0)
+    return { gte: start, lte: now }
+  }
+  if (period === 'month') {
+    const start = new Date(now); start.setDate(1); start.setHours(0, 0, 0, 0)
+    return { gte: start, lte: now }
+  }
+  if (period === 'custom' && from && to) {
+    return { gte: new Date(from), lte: new Date(to + 'T23:59:59') }
+  }
+  return undefined
+}
+
 export async function GET(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
@@ -45,7 +67,32 @@ export async function GET(req: NextRequest) {
   const total    = allLogs.length
   const delivered = allLogs.filter((m) => m.statusGroup === 'DELIVERED').length
   const failed    = allLogs.filter((m) => ['UNDELIVERABLE', 'REJECTED', 'EXPIRED'].includes(m.statusGroup)).length
-  const cost      = allLogs.reduce((sum, m) => sum + (m.pricePerMessage ?? 0), 0)
+
+  // Compute cost using prisma messages with pricing fallback
+  const createdAt = dateRange(period, from, to)
+  const userIds = appIds.length > 0 ? undefined : [session.userId]
+
+  const dbMessages = await prisma.message.findMany({
+    where: {
+      ...(userIds ? { userId: { in: userIds } } : {}),
+      ...(channel ? { channel } : {}),
+      ...(createdAt ? { createdAt } : {}),
+    },
+    select: {
+      channel: true,
+      category: true,
+      cost: true,
+      user: { select: { pricing: true, parent: { select: { pricing: true } } } },
+    },
+  })
+
+  const cost = dbMessages.reduce((acc, m) => {
+    if (m.cost != null) return acc + m.cost
+    const rawPricing = m.user.pricing ?? m.user.parent?.pricing ?? null
+    const pricing = parsePricing(rawPricing)
+    const rate = getRate(pricing, m.channel, m.category ?? undefined)
+    return acc + rate
+  }, 0)
 
   const row = {
     id: 'platform',
@@ -61,7 +108,7 @@ export async function GET(req: NextRequest) {
     byWa: totalWa,
     byRcs: 0,
     pricePerMessage: null,
-    cost: cost > 0 ? cost : null,
+    cost: cost > 0 ? cost : (allLogs.reduce((sum, m) => sum + (m.pricePerMessage ?? 0), 0) || null),
   }
 
   const fmt = searchParams.get('format')

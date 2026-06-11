@@ -122,8 +122,8 @@ export function ConsumoChart({ role }: { role: string }) {
               <YAxis tick={{ fontSize: 12, fill: '#64748b' }} />
               <Tooltip
                 contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px' }}
-                formatter={(value: number, name: string) => [
-                  value.toLocaleString(),
+                formatter={(value, name) => [
+                  Number(value).toLocaleString(),
                   name === 'sms' ? 'SMS' : name === 'whatsapp' ? 'WhatsApp' : 'RCS'
                 ]}
               />

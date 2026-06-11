@@ -1,21 +1,62 @@
 import { prisma } from './prisma'
 import { sendBalanceAlert } from './email'
 
+export type PricingMap = {
+  sms?: { marketing?: number; transaccional?: number }
+  whatsapp?: { marketing?: number; otp?: number; notificacion?: number }
+  rcs?: { simple?: number; basic?: number; conversacional?: number }
+}
+
 export type BillingCheck = { canSend: true; warning?: string } | { canSend: false; error: string }
 
-export async function checkBilling(userId: string): Promise<BillingCheck> {
+export function parsePricing(raw: string | null | undefined): PricingMap {
+  if (!raw) return {}
+  try { return JSON.parse(raw) } catch { return {} }
+}
+
+export function getRate(pricing: PricingMap, channel: string, category?: string | null): number {
+  const ch = (pricing as Record<string, Record<string, number>>)[channel]
+  if (!ch) return 0
+  if (category && ch[category] != null) return ch[category]
+  const first = Object.values(ch)[0]
+  return first ?? 0
+}
+
+export async function checkBilling(
+  userId: string,
+  channel?: string,
+  category?: string,
+): Promise<BillingCheck> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
       role: true,
-      billingType: true, balance: true, balanceExpiresAt: true, creditLimit: true, parentId: true,
-      parent: { select: { billingType: true, balance: true, balanceExpiresAt: true, creditLimit: true, parentId: true } },
+      billingType: true, balance: true, balanceExpiresAt: true, creditLimit: true,
+      pricing: true, parentId: true,
+      parent: {
+        select: {
+          billingType: true, balance: true, balanceExpiresAt: true,
+          creditLimit: true, parentId: true, pricing: true,
+        },
+      },
     },
   })
   if (!user) return { canSend: true }
 
   const billing = (user.role === 'user' && user.parent?.billingType) ? user.parent : user
   if (!billing.billingType) return { canSend: true }
+
+  // Validate pricing is configured for the requested channel
+  if (channel) {
+    const pricingRaw = (user.role === 'user' && user.parent?.billingType)
+      ? user.parent.pricing
+      : user.pricing
+    const pricing = parsePricing(pricingRaw)
+    const rate = getRate(pricing, channel, category)
+    if (rate <= 0) {
+      return { canSend: false, error: `Canal "${channel}" no tiene tarifa configurada. Contacta al administrador.` }
+    }
+  }
 
   const hasResellerParent = user.role === 'user'
     ? (user.parent?.parentId != null)
@@ -40,36 +81,63 @@ export async function checkBilling(userId: string): Promise<BillingCheck> {
   return { canSend: true }
 }
 
-export async function recordDebit(userId: string, messageCount: number) {
+export async function recordDebit(
+  userId: string,
+  messageCount: number,
+  channel: string,
+  category?: string | null,
+) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
       role: true,
-      billingType: true, pricePerMessage: true, parentId: true, balance: true,
-      parent: { select: { billingType: true, pricePerMessage: true } },
+      billingType: true, pricing: true, parentId: true, balance: true,
+      parent: { select: { billingType: true, pricing: true } },
     },
   })
   if (!user) return
 
   const useParent = user.role === 'user' && !!user.parent?.billingType && !!user.parentId
   const billingUserId = useParent ? user.parentId! : userId
-  const billingType   = useParent ? user.parent!.billingType    : user.billingType
-  const price         = useParent ? user.parent!.pricePerMessage : user.pricePerMessage
+  const billingType   = useParent ? user.parent!.billingType : user.billingType
+  const rawPricing    = useParent ? user.parent!.pricing : user.pricing
 
-  if (!billingType || !price || price <= 0) return
+  if (!billingType) return
 
-  const cost = messageCount * price
+  const pricing = parsePricing(rawPricing)
+  const rate = getRate(pricing, channel, category)
+  if (rate <= 0) return
+
+  const cost = messageCount * rate
   const prevBalance = user.balance ?? 0
+  const note = `${messageCount} msg · ${channel}/${category ?? 'default'} · $${rate}/msg`
 
+  if (billingType === 'prepaid') {
+    // Atomic decrement: only update if balance >= cost to prevent race conditions on concurrent sends
+    await prisma.$transaction(async (tx) => {
+      const updated = await tx.user.updateMany({
+        where: { id: billingUserId, balance: { gte: cost } },
+        data: { balance: { decrement: cost } },
+      })
+      if (updated.count === 0) {
+        console.warn(`[billing] prepaid debit skipped for ${billingUserId}: balance depleted by concurrent send`)
+        return
+      }
+      await tx.balanceTransaction.create({
+        data: { userId: billingUserId, amount: -cost, type: 'debit', note },
+      })
+    })
+    return
+  }
+
+  // Postpaid: always record usage
   await prisma.$transaction([
     prisma.user.update({
       where: { id: billingUserId },
-      data: billingType === 'prepaid'
-        ? { balance: { decrement: cost } }
-        : { balance: { increment: cost } },
+      data: { balance: { increment: cost } },
     }),
     prisma.balanceTransaction.create({
-      data: { userId: billingUserId, amount: -cost, type: 'debit', note: `${messageCount} mensaje(s)` },
+      data: { userId: billingUserId, amount: -cost, type: 'debit', note },
     }),
   ])
 

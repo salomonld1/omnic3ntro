@@ -7,15 +7,14 @@ import { normalizePhone } from '@/lib/phone'
 
 type ContactPayload = { to: string; message?: string; name?: string }
 
+const VALID_CATEGORIES = ['marketing', 'transaccional']
+
 export async function POST(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
-  const billing = await checkBilling(session.userId)
-  if (!billing.canSend) return NextResponse.json({ error: billing.error }, { status: 402 })
-
   const body = await req.json()
-  const { name, from, message } = body
+  const { name, from, message, category } = body
   const contacts: ContactPayload[] = body.contacts ?? []
   const numbers: string[] = body.numbers ?? []
 
@@ -25,10 +24,42 @@ export async function POST(req: NextRequest) {
   if (contacts.length === 0 && numbers.length === 0) {
     return NextResponse.json({ error: 'Se requiere al menos un destinatario' }, { status: 400 })
   }
+  if (category && !VALID_CATEGORIES.includes(category)) {
+    return NextResponse.json({ error: `Categoría inválida. Valores permitidos: ${VALID_CATEGORIES.join(', ')}` }, { status: 400 })
+  }
+  const resolvedCategory = category ?? 'transaccional'
+
+  const billing = await checkBilling(session.userId, 'sms', resolvedCategory)
+  if (!billing.canSend) return NextResponse.json({ error: billing.error }, { status: 402 })
 
   const recipients: ContactPayload[] = (
-    contacts.length > 0 ? contacts : numbers.map((to) => ({ to, message }))
+    contacts.length > 0
+      ? contacts
+      : numbers.map((to) => ({ to, message }))
   ).map((c) => ({ ...c, to: normalizePhone(c.to) }))
+
+  const campaign = await prisma.campaign.create({
+    data: {
+      name,
+      channel: 'sms',
+      status: 'sending',
+      total: recipients.length,
+      userId: session.userId,
+    },
+  })
+
+  await prisma.message.createMany({
+    data: recipients.map((c) => ({
+      to: c.to,
+      from: from || null,
+      content: c.message || message,
+      channel: 'sms',
+      category: resolvedCategory,
+      status: 'pending',
+      campaignId: campaign.id,
+      userId: session.userId,
+    })),
+  })
 
   try {
     const { apiKey, baseUrl } = await resolveCredentials(session.userId)
@@ -76,17 +107,24 @@ export async function POST(req: NextRequest) {
       bulkId = data.bulkId
     }
 
-    const now = new Date()
-    await Promise.all([
-      recordDebit(session.userId, recipients.length),
-      prisma.message.createMany({
-        data: recipients.map((c) => ({
-          to: c.to, from: from ?? null, content: c.message ?? message,
-          channel: 'sms', status: 'pending', bulkId: bulkId ?? null,
-          userId: session.userId, sentAt: now,
-        })),
-      }),
-    ])
+    await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: { status: 'sent', sent: recipients.length },
+    })
+    if (bulkId) {
+      await prisma.message.updateMany({
+        where: { campaignId: campaign.id },
+        data: { status: 'sent', bulkId, sentAt: new Date() },
+      })
+    } else {
+      await prisma.message.updateMany({
+        where: { campaignId: campaign.id },
+        data: { status: 'sent', sentAt: new Date() },
+      })
+    }
+
+    await recordDebit(session.userId, recipients.length, 'sms', resolvedCategory)
+
     const warning = 'warning' in billing ? billing.warning : undefined
     return NextResponse.json({ success: true, bulkId, total: recipients.length, warning })
   } catch (err) {

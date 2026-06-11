@@ -4,16 +4,30 @@ import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { NewUserForm } from './_form'
 import { getSession } from '@/lib/auth'
+import { getEffectiveRole } from '@/lib/dev-role'
 import { prisma } from '@/lib/prisma'
+
+const ADMIN_ROLES = ['admin', 'superadmin']
 
 export default async function NewUserPage() {
   const session = await getSession()
-  if (!session || !['admin', 'reseller', 'client'].includes(session.role)) {
-    redirect('/dashboard')
-  }
+  if (!session) redirect('/dashboard')
 
-  // Admin needs both resellers (to assign a client to) and direct clients (to assign a user to)
-  const resellers = session.role === 'admin'
+  // Use effective role (dev selector in dev, real role in prod)
+  const viewerRole = await getEffectiveRole(session.role)
+
+  const allowed = [...ADMIN_ROLES, 'reseller', 'account', 'client']
+  if (!allowed.includes(viewerRole)) redirect('/dashboard')
+
+  const isAdmin    = ADMIN_ROLES.includes(viewerRole)
+  const isReseller = viewerRole === 'reseller'
+  const isAccount  = viewerRole === 'account' || viewerRole === 'client'
+
+  // Data queries use real session for security
+  const realIsAdmin    = ADMIN_ROLES.includes(session.role)
+  const realIsReseller = session.role === 'reseller'
+
+  const resellers = realIsAdmin
     ? await prisma.user.findMany({
         where: { role: 'reseller' },
         select: { id: true, name: true },
@@ -21,22 +35,28 @@ export default async function NewUserPage() {
       })
     : []
 
-  const clients = session.role === 'admin'
+  const clients = realIsAdmin
     ? await prisma.user.findMany({
-        where: { role: 'client' },
+        where: { role: { in: ['account', 'client'] } },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      })
+    : realIsReseller
+    ? await prisma.user.findMany({
+        where: { parentId: session.userId, role: { in: ['account', 'client'] } },
         select: { id: true, name: true },
         orderBy: { name: 'asc' },
       })
     : []
 
   const title =
-    session.role === 'reseller' ? 'Nuevo Cliente'  :
-    session.role === 'client'   ? 'Nuevo Usuario'  :
+    isReseller ? 'Nuevo Cliente / Usuario' :
+    isAccount  ? 'Nuevo Usuario' :
     'Nuevo Usuario'
 
   const backLabel =
-    session.role === 'reseller' ? 'Volver a Mis Clientes' :
-    session.role === 'client'   ? 'Volver a Mis Usuarios' :
+    isReseller ? 'Volver' :
+    isAccount  ? 'Volver a Mis Usuarios' :
     'Volver a Usuarios'
 
   return (
@@ -49,11 +69,11 @@ export default async function NewUserPage() {
         </Link>
         <div className="bg-white rounded-xl border border-slate-200 p-6">
           <h2 className="font-semibold text-slate-800 mb-5">
-            {session.role === 'reseller' ? 'Crear nuevo cliente' :
-             session.role === 'client'   ? 'Crear nuevo usuario' :
+            {isReseller ? 'Crear nuevo cliente o usuario' :
+             isAccount  ? 'Crear nuevo usuario' :
              'Crear nuevo usuario'}
           </h2>
-          <NewUserForm viewerRole={session.role} resellers={resellers} clients={clients} />
+          <NewUserForm viewerRole={viewerRole} resellers={resellers} clients={clients} />
         </div>
       </main>
     </div>

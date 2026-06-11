@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { parsePricing, getRate } from '@/lib/billing'
 import * as XLSX from 'xlsx'
 
 function periodDates(period: string, from?: string, to?: string) {
@@ -57,7 +58,7 @@ export async function GET(req: NextRequest) {
   // Resolver qué userIds incluir
   let userIds: string[] | null = null // null = admin ve todo
 
-  if (session.role !== 'admin') {
+  if (session.role !== 'admin' && session.role !== 'superadmin') {
     userIds = await resolveUserIds(session.userId, session.role)
   }
 
@@ -65,7 +66,7 @@ export async function GET(req: NextRequest) {
   if (filterUserId) {
     const childUsers = await prisma.user.findMany({ where: { parentId: filterUserId }, select: { id: true } })
     userIds = [filterUserId, ...childUsers.map(u => u.id)]
-  } else if (resellerId && session.role === 'admin') {
+  } else if (resellerId && (session.role === 'admin' || session.role === 'superadmin')) {
     const clients = await prisma.user.findMany({
       where: { parentId: resellerId },
       select: { id: true, children: { select: { id: true } } },
@@ -142,21 +143,43 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * limit,
       take: limit,
-      include: { user: { select: { name: true } } },
+      select: {
+        id: true,
+        to: true,
+        content: true,
+        channel: true,
+        category: true,
+        status: true,
+        cost: true,
+        createdAt: true,
+        sentAt: true,
+        user: { select: { id: true, name: true, pricing: true, parent: { select: { pricing: true } } } },
+        campaign: { select: { name: true } },
+      },
     }),
   ])
+
+  // Determine effective price per message using saved cost or falling back to current pricing
+  function effectivePrice(m: typeof messages[0]) {
+    if (m.cost != null) return m.cost
+    const rawPricing = m.user.pricing ?? m.user.parent?.pricing ?? null
+    const pricing = parsePricing(rawPricing)
+    const rate = getRate(pricing, m.channel, m.category)
+    return rate > 0 ? rate : null
+  }
 
   const result = messages.map((m) => ({
     id: m.id,
     to: m.to,
     content: m.content,
     channel: m.channel,
+    category: m.category,
     status: m.status,
-    cost: m.cost,
+    cost: effectivePrice(m),
     createdAt: m.createdAt.toISOString(),
     sentAt: m.sentAt?.toISOString() ?? m.createdAt.toISOString(),
-    user: { id: m.userId, name: m.user.name },
-    campaign: null,
+    user: { id: m.user.id, name: m.user.name },
+    campaign: m.campaign ?? null,
   }))
 
   return NextResponse.json({ messages: result, total, pages: Math.ceil(total / limit), page })

@@ -8,30 +8,33 @@ datasource db {
 }
 
 model User {
-  id             String     @id @default(cuid())
-  name           String
-  email          String     @unique
-  password       String
-  role           String     @default("user")   // 'admin' | 'reseller' | 'user'
-  parentId       String?
-  parent         User?      @relation("UserHierarchy", fields: [parentId], references: [id])
-  children       User[]     @relation("UserHierarchy")
+  id               String     @id @default(cuid())
+  name             String
+  email            String     @unique
+  password         String
+  role             String     @default("user")   // 'superadmin' | 'admin' | 'reseller' | 'account' | 'user'
+  adminPermissions String?    // JSON: { [tab]: 'none' | 'read' | 'write' }
+  allowReports     Boolean    @default(false)    // para role='user': si puede ver reportes
+  parentId         String?
+  parent           User?      @relation("UserHierarchy", fields: [parentId], references: [id])
+  children         User[]     @relation("UserHierarchy")
   apiKey           String?    @unique
   infobipApiKey    String?
   infobipBaseUrl   String?
   infobipAppId     String?
-  pricePerMessage  Float?
-  billingType      String?   // 'prepaid' | 'postpaid'
-  balance          Float?    // prepago: saldo restante; postpago: deuda acumulada
-  balanceExpiresAt DateTime? // prepago: fecha de vencimiento del saldo
-  creditLimit      Float?    // postpago: crédito máximo autorizado
-  alertAmount      Float?    // postpago: monto en que se manda alerta por email
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-  messages       Message[]
-  campaigns      Campaign[]
-  contacts       Contact[]
-  templates      Template[]
+  pricing          String?    // JSON: { sms:{marketing,transaccional}, whatsapp:{marketing,otp,notificacion}, rcs:{simple,basic,conversacional} }
+  balanceManager   String?    // para resellers: 'admin' | 'reseller' | 'both' — quién puede asignar saldo a sus clientes
+  billingType      String?    // 'prepaid' | 'postpaid'
+  balance          Float?     // prepago: saldo restante; postpago: deuda acumulada
+  balanceExpiresAt DateTime?  // prepago: fecha de vencimiento del saldo
+  creditLimit      Float?     // postpago: crédito máximo autorizado
+  alertAmount      Float?     // postpago: monto en que se manda alerta por email
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  messages         Message[]
+  campaigns        Campaign[]
+  contacts         Contact[]
+  templates        Template[]
   balanceTransactions BalanceTransaction[]
 }
 
@@ -79,6 +82,7 @@ model Message {
   from        String?
   content     String
   channel     String
+  category    String?   // sms: marketing|transaccional; whatsapp: marketing|otp|notificacion; rcs: simple|basic|conversacional
   status      String    @default("pending")
   messageId   String?
   bulkId      String?
