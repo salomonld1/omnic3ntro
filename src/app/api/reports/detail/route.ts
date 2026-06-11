@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { parsePricing, getRate } from '@/lib/billing'
 
 function dateRange(period: string, from?: string, to?: string) {
   const now = new Date()
@@ -87,6 +88,7 @@ export async function GET(req: NextRequest) {
         to: true,
         content: true,
         channel: true,
+        category: true,
         status: true,
         cost: true,
         createdAt: true,
@@ -97,11 +99,13 @@ export async function GET(req: NextRequest) {
     }),
   ])
 
-  // Determine effective price per message respecting the two-layer pricing model
-  const sessionRole = session!.role
+  // Determine effective price per message using saved cost or falling back to current pricing
   function effectivePrice(m: typeof messages[0]) {
     if (m.cost != null) return m.cost
-    return null
+    const rawPricing = m.user.pricing ?? m.user.parent?.pricing ?? null
+    const pricing = parsePricing(rawPricing)
+    const rate = getRate(pricing, m.channel, m.category)
+    return rate > 0 ? rate : null
   }
 
   const fmt = searchParams.get('format')

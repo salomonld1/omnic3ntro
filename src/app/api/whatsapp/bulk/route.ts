@@ -6,12 +6,11 @@ import { checkBilling, recordDebit } from '@/lib/billing'
 
 type ContactPayload = { to: string; message?: string; name?: string }
 
+const VALID_CATEGORIES = ['marketing', 'otp', 'notificacion']
+
 export async function POST(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-
-  const billing = await checkBilling(session.userId)
-  if (!billing.canSend) return NextResponse.json({ error: billing.error }, { status: 402 })
 
   const body = await req.json()
   const { name, from, message, category } = body
@@ -24,6 +23,13 @@ export async function POST(req: NextRequest) {
   if (contacts.length === 0 && numbers.length === 0) {
     return NextResponse.json({ error: 'Se requiere al menos un destinatario' }, { status: 400 })
   }
+  if (category && !VALID_CATEGORIES.includes(category)) {
+    return NextResponse.json({ error: `Categoría inválida. Valores permitidos: ${VALID_CATEGORIES.join(', ')}` }, { status: 400 })
+  }
+  const resolvedCategory = category ?? 'marketing'
+
+  const billing = await checkBilling(session.userId, 'whatsapp', resolvedCategory)
+  if (!billing.canSend) return NextResponse.json({ error: billing.error }, { status: 402 })
 
   const recipients: ContactPayload[] =
     contacts.length > 0
@@ -46,7 +52,7 @@ export async function POST(req: NextRequest) {
       from: from || null,
       content: c.message || message,
       channel: 'whatsapp',
-      category: category ?? 'marketing',
+      category: resolvedCategory,
       status: 'pending',
       campaignId: campaign.id,
       userId: session.userId,
@@ -57,7 +63,6 @@ export async function POST(req: NextRequest) {
     const { apiKey, baseUrl } = await resolveCredentials(session.userId)
 
     if (apiKey && baseUrl) {
-      // WhatsApp text API sends one message at a time
       await Promise.allSettled(
         recipients.map((c) =>
           fetch(`https://${baseUrl}/whatsapp/1/message/text`, {
@@ -82,7 +87,7 @@ export async function POST(req: NextRequest) {
       data: { status: 'sent', sentAt: new Date() },
     })
 
-    await recordDebit(session.userId, recipients.length, 'whatsapp', category ?? 'marketing')
+    await recordDebit(session.userId, recipients.length, 'whatsapp', resolvedCategory)
     const warning = 'warning' in billing ? billing.warning : undefined
     return NextResponse.json({ success: true, campaignId: campaign.id, total: recipients.length, warning })
   } catch (err) {

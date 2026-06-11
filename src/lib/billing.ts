@@ -21,19 +21,41 @@ export function getRate(pricing: PricingMap, channel: string, category?: string 
   return first ?? 0
 }
 
-export async function checkBilling(userId: string): Promise<BillingCheck> {
+export async function checkBilling(
+  userId: string,
+  channel?: string,
+  category?: string,
+): Promise<BillingCheck> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
       role: true,
-      billingType: true, balance: true, balanceExpiresAt: true, creditLimit: true, parentId: true,
-      parent: { select: { billingType: true, balance: true, balanceExpiresAt: true, creditLimit: true, parentId: true } },
+      billingType: true, balance: true, balanceExpiresAt: true, creditLimit: true,
+      pricing: true, parentId: true,
+      parent: {
+        select: {
+          billingType: true, balance: true, balanceExpiresAt: true,
+          creditLimit: true, parentId: true, pricing: true,
+        },
+      },
     },
   })
   if (!user) return { canSend: true }
 
   const billing = (user.role === 'user' && user.parent?.billingType) ? user.parent : user
   if (!billing.billingType) return { canSend: true }
+
+  // Validate pricing is configured for the requested channel
+  if (channel) {
+    const pricingRaw = (user.role === 'user' && user.parent?.billingType)
+      ? user.parent.pricing
+      : user.pricing
+    const pricing = parsePricing(pricingRaw)
+    const rate = getRate(pricing, channel, category)
+    if (rate <= 0) {
+      return { canSend: false, error: `Canal "${channel}" no tiene tarifa configurada. Contacta al administrador.` }
+    }
+  }
 
   const hasResellerParent = user.role === 'user'
     ? (user.parent?.parentId != null)
@@ -87,21 +109,34 @@ export async function recordDebit(
   if (rate <= 0) return
 
   const cost = messageCount * rate
+  const note = `${messageCount} msg · ${channel}/${category ?? 'default'} · $${rate}/msg`
 
+  if (billingType === 'prepaid') {
+    // Atomic decrement: only update if balance >= cost to prevent race conditions on concurrent sends
+    await prisma.$transaction(async (tx) => {
+      const updated = await tx.user.updateMany({
+        where: { id: billingUserId, balance: { gte: cost } },
+        data: { balance: { decrement: cost } },
+      })
+      if (updated.count === 0) {
+        console.warn(`[billing] prepaid debit skipped for ${billingUserId}: balance depleted by concurrent send`)
+        return
+      }
+      await tx.balanceTransaction.create({
+        data: { userId: billingUserId, amount: -cost, type: 'debit', note },
+      })
+    })
+    return
+  }
+
+  // Postpaid: always record usage
   await prisma.$transaction([
     prisma.user.update({
       where: { id: billingUserId },
-      data: billingType === 'prepaid'
-        ? { balance: { decrement: cost } }
-        : { balance: { increment: cost } },
+      data: { balance: { increment: cost } },
     }),
     prisma.balanceTransaction.create({
-      data: {
-        userId: billingUserId,
-        amount: -cost,
-        type: 'debit',
-        note: `${messageCount} msg · ${channel}/${category ?? 'default'} · $${rate}/msg`,
-      },
+      data: { userId: billingUserId, amount: -cost, type: 'debit', note },
     }),
   ])
 }

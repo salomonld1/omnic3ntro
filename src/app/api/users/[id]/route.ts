@@ -4,6 +4,32 @@ import crypto from 'crypto'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
 
+const PRICING_CHANNELS: Record<string, string[]> = {
+  sms: ['marketing', 'transaccional'],
+  whatsapp: ['marketing', 'otp', 'notificacion'],
+  rcs: ['simple', 'basic', 'conversacional'],
+}
+
+function isValidPricing(raw: unknown): boolean {
+  let parsed: unknown
+  try {
+    parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+  } catch { return false }
+  if (typeof parsed !== 'object' || !parsed) return false
+  const p = parsed as Record<string, unknown>
+  for (const [ch, cats] of Object.entries(PRICING_CHANNELS)) {
+    if (p[ch] === undefined) continue
+    if (typeof p[ch] !== 'object' || !p[ch]) return false
+    const chObj = p[ch] as Record<string, unknown>
+    for (const cat of cats) {
+      if (chObj[cat] === undefined) continue
+      const v = chObj[cat]
+      if (typeof v !== 'number' || v < 0 || !isFinite(v)) return false
+    }
+  }
+  return true
+}
+
 async function canManage(session: { userId: string; role: string }, targetId: string) {
   if (session.role === 'admin') return true
   if (session.role === 'reseller' || session.role === 'client') {
@@ -67,12 +93,27 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (emailTaken) return NextResponse.json({ error: 'Ese email ya está en uso' }, { status: 409 })
   }
 
+  if (pricing !== undefined && pricing !== null) {
+    if (!isValidPricing(pricing)) {
+      return NextResponse.json({ error: 'Estructura de tarifas inválida. Los valores deben ser números positivos.' }, { status: 400 })
+    }
+  }
+
   const data: Record<string, unknown> = {}
   if (name) data.name = name
   if (email) data.email = email
   if (password) data.password = await bcrypt.hash(password, 10)
-  if (session.role === 'admin') {
-    if (role !== undefined) data.role = ['admin', 'reseller', 'client', 'user'].includes(role) ? role : 'user'
+  if (session.role === 'superadmin') {
+    if (role !== undefined) {
+      const allowed = ['superadmin', 'admin', 'reseller', 'account', 'client', 'user']
+      data.role = allowed.includes(role) ? role : 'user'
+    }
+    if (parentId !== undefined) data.parentId = parentId || null
+  } else if (session.role === 'admin') {
+    if (role !== undefined) {
+      const allowed = ['reseller', 'account', 'client', 'user']
+      data.role = allowed.includes(role) ? role : 'user'
+    }
     if (parentId !== undefined) data.parentId = parentId || null
   }
   if (infobipApiKey !== undefined) data.infobipApiKey = infobipApiKey || null

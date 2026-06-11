@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { parsePricing, getRate } from '@/lib/billing'
 
 function dateRange(period: string, from?: string, to?: string) {
   const now = new Date()
@@ -86,7 +87,7 @@ export async function GET(req: NextRequest) {
           ...(channel ? { channel } : {}),
           ...(createdAt ? { createdAt } : {}),
         },
-        select: { channel: true, status: true },
+        select: { channel: true, category: true, status: true, cost: true },
       },
     },
     orderBy: { name: 'asc' },
@@ -102,7 +103,13 @@ export async function GET(req: NextRequest) {
     const byWa  = msgs.filter((m) => m.channel === 'whatsapp').length
     const byRcs = msgs.filter((m) => m.channel === 'rcs').length
 
-    const cost = null
+    const rawPricing = u.pricing ?? u.parent?.pricing ?? null
+    const pricing = parsePricing(rawPricing)
+    const cost = msgs.reduce((acc, m) => {
+      if (m.cost != null) return acc + m.cost
+      const rate = getRate(pricing, m.channel, m.category ?? undefined)
+      return acc + rate
+    }, 0)
 
     return {
       id: u.id,

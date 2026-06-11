@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Search, Wallet, CreditCard } from 'lucide-react'
 
 type Account = {
@@ -30,6 +31,7 @@ function roleBadge(role: string) {
 }
 
 export function BillingClient({ accounts, adminRole }: { accounts: Account[]; adminRole: string }) {
+  const router = useRouter()
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Account | null>(null)
   const [panel, setPanel] = useState<'topup' | 'limit' | null>(null)
@@ -70,7 +72,7 @@ export function BillingClient({ accounts, adminRole }: { accounts: Account[]; ad
       const data = await res.json()
       if (!res.ok) { setMsg({ ok: false, text: data.error ?? 'Error' }); return }
       setMsg({ ok: true, text: 'Guardado correctamente' })
-      setTimeout(() => { setPanel(null); window.location.reload() }, 800)
+      setTimeout(() => { setPanel(null); router.refresh() }, 800)
     } catch (e) {
       setMsg({ ok: false, text: String(e) })
     } finally { setLoading(false) }

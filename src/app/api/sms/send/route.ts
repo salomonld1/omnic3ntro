@@ -4,15 +4,21 @@ import { prisma } from '@/lib/prisma'
 import { sendSms } from '@/lib/infobip'
 import { checkBilling, recordDebit } from '@/lib/billing'
 
+const VALID_CATEGORIES = ['marketing', 'transaccional']
+
 export async function POST(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
-  const billing = await checkBilling(session.userId)
-  if (!billing.canSend) return NextResponse.json({ error: billing.error }, { status: 402 })
-
   const { to, from, message, category } = await req.json()
   if (!to || !message) return NextResponse.json({ error: 'to y message son requeridos' }, { status: 400 })
+  if (category && !VALID_CATEGORIES.includes(category)) {
+    return NextResponse.json({ error: `Categoría inválida. Valores permitidos: ${VALID_CATEGORIES.join(', ')}` }, { status: 400 })
+  }
+  const resolvedCategory = category ?? 'transaccional'
+
+  const billing = await checkBilling(session.userId, 'sms', resolvedCategory)
+  if (!billing.canSend) return NextResponse.json({ error: billing.error }, { status: 402 })
 
   const msg = await prisma.message.create({
     data: {
@@ -20,7 +26,7 @@ export async function POST(req: NextRequest) {
       from: from || null,
       content: message,
       channel: 'sms',
-      category: category ?? 'transaccional',
+      category: resolvedCategory,
       status: 'pending',
       userId: session.userId,
     },
@@ -33,7 +39,7 @@ export async function POST(req: NextRequest) {
       where: { id: msg.id },
       data: { status: 'sent', messageId: messageId ?? null, sentAt: new Date() },
     })
-    await recordDebit(session.userId, 1, 'sms', category ?? 'transaccional')
+    await recordDebit(session.userId, 1, 'sms', resolvedCategory)
     const warning = 'warning' in billing ? billing.warning : undefined
     return NextResponse.json({ success: true, messageId: messageId ?? msg.id, warning })
   } catch (err) {

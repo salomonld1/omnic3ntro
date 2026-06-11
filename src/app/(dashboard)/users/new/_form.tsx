@@ -144,6 +144,7 @@ export function NewUserForm({
             <option value="user">Usuario — empleado que envía mensajes</option>
             <option value="account">Cuenta/Cliente — empresa con sus propios usuarios</option>
             <option value="reseller">Reseller — distribuidor con sus propios clientes</option>
+            {viewerRole === 'superadmin' && <option value="admin">Admin — administrador del sistema</option>}
           </select>
         </div>
       )}
